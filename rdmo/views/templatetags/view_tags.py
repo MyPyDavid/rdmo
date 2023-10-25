@@ -1,85 +1,134 @@
+from typing import Dict, List, Optional
+
 from django import template
 from django.utils.translation import gettext_lazy as _
 
 from rdmo.core.constants import VALUE_TYPE_DATETIME, VALUE_TYPE_INTEGER, VALUE_TYPE_TEXT
-from rdmo.projects.models import Value
+from rdmo.projects.models import Project, Value
 
 register = template.Library()
 
 
-@register.simple_tag(takes_context=True)
-def get_values(context, attribute, set_prefix='*', set_index='*', index='*', project=None):
+ATTRIBUTE_VALUE_MAPPER = {
+    "project/id": {
+        "text_attribute": "id",
+        "value_type": VALUE_TYPE_INTEGER
+    },
+    "project/title": {
+        "text_attribute": "title",
+        "value_type": VALUE_TYPE_TEXT
+    },
+    "project/description": {
+        "text_attribute": "description",
+        "value_type": VALUE_TYPE_TEXT,
+    },
+    "project/created": {
+        "text_attribute": "created",
+        "value_type": VALUE_TYPE_DATETIME
+    },
+    "project/updated": {
+        "text_attribute": "updated",
+        "value_type": VALUE_TYPE_DATETIME
+    },
+    "project/snapshot/id": {
+        "text_attribute": "snapshot__id",
+        "value_type": VALUE_TYPE_INTEGER,
+    },
+    "project/snapshot/title": {
+        "text_attribute": "snapshot__title",
+        "value_type": VALUE_TYPE_TEXT,
+    },
+    "project/snapshot/description": {
+        "text_attribute": "snapshot__description",
+        "value_type": VALUE_TYPE_TEXT,
+    },
+    "project/snapshot/created": {
+        "text_attribute": "snapshot__created",
+        "value_type": VALUE_TYPE_DATETIME,
+    },
+    "project/snapshot/updated": {
+        "text_attribute": "snapshot__updated",
+        "value_type": VALUE_TYPE_DATETIME,
+    },
+}
+
+
+def get_value_from_mapped_attribute(attribute: str, project: Project) -> Value:
+
+    if attribute not in ATTRIBUTE_VALUE_MAPPER:
+        raise ValueError(f"Attribute {attribute} is not supported")
+    attribute_value_map = ATTRIBUTE_VALUE_MAPPER[attribute]
+
+    text = getattr(project, attribute_value_map["text_attribute"])
+    value_type = attribute_value_map["value_type"]
+    return Value(text=text, value_type=value_type)
+
+def get_values_from_project_or_mapper(context: dict, attribute: str,
+                                      set_prefix: str, set_index: str,
+                                      index, project, **kwargs) -> List[Optional[Dict[str, str]]]:
     if project is None:
         project = context['project']
 
-    if attribute == 'project/id':
-        return [Value(text=project.id, value_type=VALUE_TYPE_INTEGER).as_dict]
-    elif attribute == 'project/title':
-        return [Value(text=project.title, value_type=VALUE_TYPE_TEXT).as_dict]
-    elif attribute == 'project/description':
-        return [Value(text=project.description, value_type=VALUE_TYPE_TEXT).as_dict]
-    elif attribute == 'project/created':
-        return [Value(text=project.created, value_type=VALUE_TYPE_DATETIME).as_dict]
-    elif attribute == 'project/updated':
-        return [Value(text=project.updated, value_type=VALUE_TYPE_DATETIME).as_dict]
-    if attribute == 'project/snapshot/id':
-        return [Value(text=project.snapshot.get('id'), value_type=VALUE_TYPE_INTEGER).as_dict]
-    elif attribute == 'project/snapshot/title':
-        return [Value(text=project.snapshot.get('title'), value_type=VALUE_TYPE_TEXT).as_dict]
-    elif attribute == 'project/snapshot/description':
-        return [Value(text=project.snapshot.get('description'), value_type=VALUE_TYPE_TEXT).as_dict]
-    elif attribute == 'project/snapshot/created':
-        return [Value(text=project.snapshot.get('created'), value_type=VALUE_TYPE_DATETIME).as_dict]
-    elif attribute == 'project/snapshot/updated':
-        return [Value(text=project.snapshot.get('updated'), value_type=VALUE_TYPE_DATETIME).as_dict]
+    if attribute in ATTRIBUTE_VALUE_MAPPER:
+        value = get_value_from_mapped_attribute(attribute, project)
+        return [value.as_dict]
     else:
         return project._get_values(attribute, set_prefix, set_index, index)
+
+def get_values_func(*args, **kwargs):
+    values = get_values_from_project_or_mapper(*args, **kwargs)
+    return values
+
+def get_value_func(*args, **kwargs):
+    values = get_values_from_project_or_mapper(*args, **kwargs)
+    try:
+        return values[0]
+    except IndexError:
+        return None
+
+@register.simple_tag(takes_context=True)
+def get_values(context, attribute, set_prefix='*', set_index='*', index='*', project=None):
+    values = get_values_func(context, attribute, set_prefix, set_index, index, project)
+    return values
 
 
 @register.simple_tag(takes_context=True)
 def get_numbers(context, attribute, set_prefix='*', set_index='*', index='*', project=None):
-    values = get_values(context, attribute, set_prefix, set_index, index, project)
-    return [value.get('as_number', 0) for value in values]
+    values = get_values_func(context, attribute, set_prefix, set_index, index, project)
+    return (value.get('as_number', 0) for value in values)
 
 
 @register.simple_tag(takes_context=True)
 def get_value(context, attribute, set_prefix='', set_index=0, index=0, project=None):
-    try:
-        return get_values(context, attribute, set_prefix=set_prefix, set_index=set_index,
-                          index=index, project=project)[0]
-    except IndexError:
-        return None
-
+    value = get_value_func(context, attribute, set_prefix, set_index, index, project)
+    return value
 
 @register.simple_tag(takes_context=True)
 def get_number(context, attribute, set_prefix='', set_index=0, index=0, project=None):
-    value = get_value(context, attribute, set_prefix, set_index, index, project)
+    value = get_value_func(context, attribute, set_prefix, set_index, index, project)
     if value is None:
         return 0
-    else:
-        return value.get('as_number', 0)
+    return value.get('as_number', 0)
 
 
 @register.simple_tag(takes_context=True)
-def get_set_values(context, set, attribute, set_prefix='', project=None):
+def get_set_values(context, set, attribute, set_prefix='', index='*', project=None):
     set_index = set.get('set_index')
-    return get_values(context, attribute, set_prefix=set_prefix, set_index=set_index, project=project)
+    return get_values_func(context, attribute, set_prefix, index, set_index, project)
 
 
 @register.simple_tag(takes_context=True)
 def get_set_value(context, set, attribute, set_prefix='', index=0, project=None):
-    try:
-        set_index = set.get('set_index')
-        return get_values(context, attribute, set_prefix=set_prefix, set_index=set_index,
-                          index=index, project=project)[0]
-    except IndexError:
-        return None
+    set_index = set.get('set_index')
+    value = get_value_func(context, attribute, set_prefix, set_index, index, project)
+    return value
 
 
 @register.simple_tag(takes_context=True)
 def get_set_prefixes(context, attribute, project=None):
     try:
-        return sorted({value['set_prefix'] for value in get_values(context, attribute, project=project)})
+        _dct = {value['set_prefix'] for value in get_values(context, attribute, project=project)}
+        return sorted(_dct)
     except IndexError:
         return None
 
@@ -87,9 +136,8 @@ def get_set_prefixes(context, attribute, project=None):
 @register.simple_tag(takes_context=True)
 def get_set_indexes(context, attribute, set_prefix='', project=None):
     try:
-        return sorted({
-            value['set_index'] for value in get_values(context, attribute, set_prefix=set_prefix, project=project)
-        })
+        _idx = {value['set_index'] for value in get_values(context, attribute, set_prefix=set_prefix, project=project)}
+        return sorted(_idx)
     except IndexError:
         return None
 
