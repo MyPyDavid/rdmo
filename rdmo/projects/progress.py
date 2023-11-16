@@ -1,4 +1,6 @@
 from collections import defaultdict
+from itertools import groupby
+from operator import itemgetter
 
 from django.db.models import Exists, OuterRef, Q
 
@@ -89,19 +91,46 @@ def compute_progress(project, snapshot=None):
     conditions = resolve_conditions(project, values)
 
     # compute sets from values (including empty values)
+    all_values = values.distinct_list()
     sets = defaultdict(lambda: defaultdict(list))
     for attribute, set_prefix, set_index in values.distinct_list():
         sets[attribute][set_prefix].append(set_index)
 
-    # query distinct, non empty set values
-    values_list = values.exclude_empty().distinct_list()
+    getattribute = itemgetter(0)
+    grp_attribute = groupby(all_values, key=getattribute)
+    getsetprefix = itemgetter(1)
+    getsetindex = itemgetter(2)
+    {
+            attribute: {
+                setprefix: list(map(getsetindex, sgrp))
+                for setprefix, sgrp in groupby(grp, getsetprefix)
+            }
+                for attribute, grp in grp_attribute
+        }
 
+    # query distinct, non empty set values
+    non_empty_values = values.exclude_empty().distinct_list()
+
+
+    # breakpoint()
+    # itertools accumulate
 
     # count the total number of questions, taking sets and conditions into account
+    project.catalog.elements[0].elements[0].elements[0].condition
+
+    sections = project.catalog.elements
+    pages = ((x, x.elements) for x in sections)
+    questionsets = ((x[0], ((x, x.elements) for x in x[1])) for x in pages)
+    # questions_questionsets = map(lambda x: (x[0], map(lambda x: (x, x.elements), x[1])), questionsets)
+    questions = ((x[0], ((x[0], ((x, x.elements) for x in x[1])) for x in x[1])) for x in questionsets)
+    # interview =
+    dict(questions)
+    dict(pages)
+
     counts = count_questions(project.catalog, sets, conditions)
 
     # filter the values_list for the attributes, and compute the total sum of counts
-    count = len(tuple(filter(lambda value: value[0] in counts.keys(), values_list)))
+    count = len(tuple(filter(lambda value: value[0] in counts.keys(), non_empty_values)))
     total = sum(counts.values())
 
     return count, total
