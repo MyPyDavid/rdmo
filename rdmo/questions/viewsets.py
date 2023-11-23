@@ -1,8 +1,13 @@
+from django.contrib.sites.shortcuts import get_current_site
 from django.db import models
 
 from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import (
+    SAFE_METHODS,
+    BasePermission,
+    IsAuthenticated,
+)
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
@@ -42,6 +47,27 @@ from .serializers.v1 import (
 from .utils import get_widget_type_choices
 
 
+class CanUpdateCatalogSites(BasePermission):
+    """
+    The request is authenticated as a user, or is a read-only request.
+    """
+    perms_map = {
+        'GET': ['questions.view_catalog_own_site'],
+        'OPTIONS': [],
+        'HEAD': ['questions.view_catalog_own_site'],
+        'POST': ['questions.add_catalog_own_site'],
+        'PUT': ['questions.change_catalog_own_site'],
+        'PATCH': ['questions.change_catalog_own_site'],
+        'DELETE': ['questions.delete_catalog_own_site'],
+    }
+
+    def has_permission(self, request, view):
+        return bool(
+            request.method in SAFE_METHODS or
+            request.user and
+            request.user.is_authenticated
+        )
+
 class CatalogViewSet(ModelViewSet):
     permission_classes = (HasModelPermission | HasObjectPermission,)
     serializer_class = CatalogSerializer
@@ -55,6 +81,14 @@ class CatalogViewSet(ModelViewSet):
         'comment',
         'sites'
     )
+    actions_permissions = {
+        'join_sites': 'questions.change_catalog_own_site'
+    }
+
+    def get_permissions(self):
+        if self.action == "join_sites":
+            return [HasModelPermission()]
+        return [permission() for permission in self.permission_classes]
 
     def get_queryset(self):
         queryset = Catalog.objects.annotate(projects_count=models.Count('projects'))
@@ -102,6 +136,29 @@ class CatalogViewSet(ModelViewSet):
                     'catalogs': [self.get_object()]
                 }
             )
+
+    @action(detail=True, methods=['get', 'post', 'delete'])
+    def join_sites(self, request, pk=None):
+        catalog = self.get_object()
+        current_site = get_current_site(request)
+        has_current_site = catalog.sites.filter(id=current_site.id).exists()
+        has_perm = request.user.has_perm('questions.change_catalog_own_site', current_site)
+        if not has_perm:
+            return Response({'detail': 'You do not have permission to change the sites of this catalog.'}, status=403)
+
+        if request.method.lower() == 'post' and not has_current_site:
+            catalog.sites.add(current_site)
+            has_current_site = True
+        elif request.method.lower() == 'delete' and has_current_site:
+            catalog.sites.remove(current_site)
+            has_current_site = False
+        elif request.method.lower() == 'get':
+            pass
+
+        data = {
+            'catalog_has_current_site': has_current_site,
+        }
+        return Response(data)
 
     def get_export_renderer_context(self, request):
         full = is_truthy(request.GET.get('full'))

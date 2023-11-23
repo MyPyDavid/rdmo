@@ -158,6 +158,8 @@ rules.add_perm('views.delete_view_object', is_element_editor)
 # Model permissions for catalogs
 rules.add_perm('questions.view_catalog', is_editor | is_reviewer)
 rules.add_perm('questions.add_catalog', is_editor)
+# sites field perms
+rules.add_perm('questions.change_catalog_own_site', is_editor_for_current_site)
 
 # Object permissions for catalogs
 rules.add_perm('questions.view_catalog_object', is_element_editor | is_element_reviewer)
