@@ -104,6 +104,7 @@ LockedLink.propTypes = {
 
 const JoinSitesLink = ({ has_current_site, locked, title, onClick, disabled }) => {
   const className = classNames({
+    // joinSitesURL
     'element-btn-link fa': true,
     'fa-calendar-plus-o': !has_current_site,
     'fa-calendar-minus-o': has_current_site,
@@ -114,6 +115,7 @@ const JoinSitesLink = ({ has_current_site, locked, title, onClick, disabled }) =
 }
 
 JoinSitesLink.propTypes = {
+  // joinSitesURL: PropTypes.string.isRequired,
   has_current_site: PropTypes.bool.isRequired,
   locked: PropTypes.bool.isRequired,
   title: PropTypes.string.isRequired,

@@ -26,6 +26,9 @@ const Catalog = ({ config, catalog, elementActions, display='list',
   const fetchEdit = () => elementActions.fetchElement('catalogs', catalog.id)
   const fetchCopy = () => elementActions.fetchElement('catalogs', catalog.id, 'copy')
   const fetchNested = () => elementActions.fetchElement('catalogs', catalog.id, 'nested')
+  // const fetchJoinSites = () => elementActions.fetchElement('catalogs', catalog.id, 'join_sites')
+  // const deleteJoinSites = () => elementActions.deleteElement('catalogs', catalog.id, 'join_sites')
+  // const joinJoinSites = () => elementActions.joinElement('catalogs', catalog.id, 'join_sites')
 
   const toggleAvailable = () => elementActions.storeElement('catalogs', {...catalog, available: !catalog.available })
   const toggleLocked = () => elementActions.storeElement('catalogs', {...catalog, locked: !catalog.locked })

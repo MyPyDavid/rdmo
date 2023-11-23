@@ -14,6 +14,7 @@ class QuestionsApi extends BaseApi {
   static fetchCatalog(id, action) {
     let url = `/api/v1/questions/catalogs/${id}/`
     if (action == 'nested') url += 'nested/'
+    if (action == 'join_sites') url += 'join_sites/'
     return this.get(url)
   }
 
@@ -27,6 +28,14 @@ class QuestionsApi extends BaseApi {
 
   static deleteCatalog(catalog) {
     return this.delete(`/api/v1/questions/catalogs/${catalog.id}/`)
+  }
+
+  static joinSiteToCatalog(catalog) {
+    return this.post(`/api/v1/questions/catalogs/${catalog.id}/join_sites/`)
+  }
+
+  static deleteSiteFromCatalog(catalog) {
+    return this.delete(`/api/v1/questions/catalogs/${catalog.id}/join_sites/`)
   }
 
   static fetchSections(action) {

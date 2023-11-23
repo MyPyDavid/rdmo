@@ -80,6 +80,7 @@ export function fetchElements(elementType) {
         action = (dispatch) => ViewsApi.fetchViews(true)
           .then(views => dispatch(fetchElementsSuccess({ views })))
         break
+        // TODO add the action join_sites here?
     }
 
     return dispatch(action)
