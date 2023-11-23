@@ -102,6 +102,26 @@ LockedLink.propTypes = {
   disabled: PropTypes.bool
 }
 
+const JoinSitesLink = ({ has_current_site, locked, title, onClick, disabled }) => {
+  const className = classNames({
+    'element-btn-link fa': true,
+    'fa-calendar-plus-o': !has_current_site,
+    'fa-calendar-minus-o': has_current_site,
+  })
+  // !has_current_site &&
+  return  <LinkButton className={className} title={locked ? gettext('Locked') : title}
+                     disabled={locked || disabled} onClick={onClick} />
+}
+
+JoinSitesLink.propTypes = {
+  has_current_site: PropTypes.bool.isRequired,
+  locked: PropTypes.bool.isRequired,
+  title: PropTypes.string.isRequired,
+  onClick: PropTypes.func.isRequired,
+  disabled: PropTypes.bool
+}
+
+
 const ShowElementsLink = ({ showElements, show, onClick }) => {
   const className = classNames({
     'element-btn-link fa': true,
@@ -235,5 +255,5 @@ ShowLink.propTypes = {
   onClick: PropTypes.func.isRequired
 }
 
-export { EditLink, CopyLink, AddLink, AvailableLink, LockedLink, ShowElementsLink,
+export { EditLink, CopyLink, AddLink, AvailableLink, JoinSitesLink, LockedLink, ShowElementsLink,
          NestedLink, ExportLink, ExtendLink, CodeLink, ErrorLink, WarningLink, ShowLink }

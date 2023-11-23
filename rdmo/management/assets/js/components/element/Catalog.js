@@ -6,7 +6,7 @@ import { filterElement } from '../../utils/filter'
 import { buildPath } from '../../utils/location'
 
 import { ElementErrors } from '../common/Errors'
-import { EditLink, CopyLink, AddLink, AvailableLink, LockedLink, NestedLink,
+import { EditLink, CopyLink, AddLink, AvailableLink, JoinSitesLink, LockedLink, NestedLink,
          ExportLink, CodeLink } from '../common/Links'
 import { ReadOnlyIcon } from '../common/Icons'
 
@@ -19,6 +19,9 @@ const Catalog = ({ config, catalog, elementActions, display='list',
   const copyUrl = buildPath(config.baseUrl, 'catalogs', catalog.id, 'copy')
   const nestedUrl = buildPath(config.baseUrl, 'catalogs', catalog.id, 'nested')
   const exportUrl = buildPath('/api/v1/', 'questions', 'catalogs', catalog.id, 'export')
+  const joinSitesUrl = buildPath('api/v1/', 'questions', 'catalogs', catalog.id, 'join_sites')
+  const has_current_site =  config.settings.multisite ? catalog.sites.includes(config.currentSite.id) : true
+
 
   const fetchEdit = () => elementActions.fetchElement('catalogs', catalog.id)
   const fetchCopy = () => elementActions.fetchElement('catalogs', catalog.id, 'copy')
@@ -26,12 +29,18 @@ const Catalog = ({ config, catalog, elementActions, display='list',
 
   const toggleAvailable = () => elementActions.storeElement('catalogs', {...catalog, available: !catalog.available })
   const toggleLocked = () => elementActions.storeElement('catalogs', {...catalog, locked: !catalog.locked })
+  const joinCurrentSite = () => elementActions.storeElement('catalogs', {...catalog, sites: catalog.sites.concat(config.currentSite.id) })
+  const removeCurrentSite = () => elementActions.storeElement('catalogs', {...catalog, sites: catalog.sites.filter(site => site !== config.currentSite.id) })
 
   const createSection = () => elementActions.createElement('sections', { catalog })
 
   const elementNode = (
     <div className="element">
       <div className="pull-right">
+        <JoinSitesLink title={has_current_site ? gettext('Remove your site')
+                                               : gettext('Add your site')}
+                    has_current_site={has_current_site} joinSitesUrl={joinSitesUrl}
+                    locked={catalog.locked} onClick={has_current_site ? removeCurrentSite : joinCurrentSite}/>
         <ReadOnlyIcon title={gettext('This catalog is read only')} show={catalog.read_only} />
         <NestedLink title={gettext('View catalog nested')} href={nestedUrl} onClick={fetchNested} />
         <EditLink title={gettext('Edit catalog')} href={editUrl} onClick={fetchEdit} />
