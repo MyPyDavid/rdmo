@@ -1,125 +1,204 @@
+"""Management command to flag potentially automated or spam user accounts."""
+
+from __future__ import annotations
+
 import csv
+from datetime import datetime
+from itertools import accumulate, groupby
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
 from rdmo.projects.models import Membership
 
 
+DateTuple = Tuple[int, str, str, str, datetime, str, Optional[datetime]]
+UserRow = Dict[str, object]
+
+
 class Command(BaseCommand):
+    help = (
+        "Find potentially automated/spam users by detecting many users that joined in quick succession. "
+        "Optionally write results to CSV for further inspection."
+    )
+
     def add_arguments(self, parser):
         parser.add_argument(
-            '-t', '--timespan',
-            default=2, type=int,
+            "-t",
+            "--timespan",
+            default=2,
+            type=int,
             help=(
-                'timespan in seconds between two joining users, '
-                'less than the given value is considered to be suspicious, '
-                'default is 2'
-            )
+                "timespan in seconds between two joining users, "
+                "less than the given value is considered to be suspicious, "
+                "default is 2"
+            ),
         )
         parser.add_argument(
-            '-n', '--occurrence',
-            default=3, type=int,
+            "-n",
+            "--occurrence",
+            default=3,
+            type=int,
             help=(
-                'number of sequentially occurring timespan '
-                'violations at which users are put into the '
-                'potential spam users list, default is 3'
+                "number of sequentially occurring timespan violations at which users are put into the "
+                "potential spam users list, default is 3"
+            ),
+        )
+        parser.add_argument(
+            "-p",
+            "--print",
+            action="store_true",
+            help="print found users, don't save them to csv",
+        )
+        parser.add_argument(
+            "-o",
+            "--output_file",
+            default="potential_spam_users.csv",
+            help='output file, default is "potential_spam_users.csv"',
+        )
+
+    def save_csv(self, data: Iterable[UserRow], filename: str) -> None:
+        """Write the provided rows to a CSV file if there is data to persist."""
+
+        rows = list(data)
+        if not rows:
+            self.stdout.write("No data to write.")
+            return
+
+        keys = list(rows[0].keys())
+        with open(filename, "w", newline="", encoding="utf-8") as data_file:
+            csv_writer = csv.DictWriter(data_file, fieldnames=keys)
+            csv_writer.writeheader()
+            csv_writer.writerows(rows)
+        self.stdout.write(f"List written to {filename}")
+
+    def print_file(self, filename: str) -> None:
+        with open(filename) as file:
+            self.stdout.write(file.read())
+
+    def get_users_having_projects(self) -> Set[int]:
+        """Return a set of user ids that belong to at least one project."""
+
+        return set(Membership.objects.values_list("user", flat=True))
+
+    def _date_string(self, value: Optional[datetime]) -> Optional[str]:
+        if not value:
+            return None
+        return value.strftime("%Y-%m-%dT%H:%M:%S.%f")
+
+    def _normalize_datetime(self, value: datetime) -> datetime:
+        """Ensure datetimes are timezone-aware to avoid timestamp errors."""
+
+        return timezone.make_aware(value) if timezone.is_naive(value) else value
+
+    def _user_queryset(self) -> Sequence[DateTuple]:
+        return User.objects.order_by("date_joined").values_list(
+            "id", "username", "first_name", "last_name", "date_joined", "email", "last_login"
+        )
+
+    def _rows_from_user_values(self, user_rows: Sequence[DateTuple], users_with_projects: Set[int]) -> List[UserRow]:
+        rows: List[UserRow] = []
+        for uid, username, first_name, last_name, date_joined, email, last_login in user_rows:
+            aware_joined = self._normalize_datetime(date_joined)
+            rows.append(
+                {
+                    "id": uid,
+                    "username": username,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "date_joined": aware_joined,
+                    "unix_joined": aware_joined.timestamp(),
+                    "email": email,
+                    "last_login": last_login,
+                    "has_project": uid in users_with_projects,
+                }
             )
-        )
-        parser.add_argument(
-            '-p', '--print',
-            action='store_true',
-            help='print found users, don\'t save them to csv'
-        )
-        parser.add_argument(
-            '-o', '--output_file',
-            default='potential_spam_users.csv',
-            help='output file, default is "potential_spam_users.csv"'
-        )
+        return rows
 
-    def save_csv(self, data, filename):
-        if data:
-            with open(filename, 'w', newline='', encoding='utf-8') as data_file:
-                csv_writer = csv.writer(data_file)
-                csv_writer.writerow(list(data[0].keys()))
-                for user in data:
-                    csv_writer.writerow(user.values())
-            print(f'List written to {filename}')
+    def _group_users(self, users: Sequence[UserRow], timespan: int) -> Dict[int, List[UserRow]]:
+        """Group users into sequential buckets separated by at least ``timespan`` seconds."""
 
-    def print_file(self, filename):
-        with open(filename) as f:
-            content = f.read()
-            print(content)
+        markers = [0]
+        for previous, current in zip(users, users[1:]):
+            gap = current["unix_joined"] - previous["unix_joined"]
+            markers.append(1 if gap >= timespan else 0)
 
-    def get_users_having_projects(self) -> set:
-        return set(Membership.objects.all().values_list('user', flat=True))
+        group_ids = accumulate(markers)
+        paired = zip(group_ids, users)
 
-    def append_to_group(self, group_list, group_count, user, list_users_having_projects):
-        date_string = '%Y-%m-%dT%H:%M:%S.%f'
-        last_login = user['last_login'].strftime(date_string) if user['last_login'] else None
+        return {gid: [user for _, user in items] for gid, items in groupby(paired, key=lambda pair: pair[0])}
 
-        has_project = user['id'] in list_users_having_projects
-        group_list[group_count].append(
-            {
-                'id': user['id'],
-                'email': user['email'],
-                'username': user['username'],
-                'first_name': user['first_name'],
-                'last_name': user['last_name'],
-                'date_joined': user['date_joined'].strftime(date_string),
-                'last_login': last_login,
-                'has_project': has_project,
-            }
-        )
-        return group_list
+    def _flatten_suspicious_groups(self, grouped_users: Dict[int, List[UserRow]], occurrence: int) -> List[UserRow]:
+        """Flatten groups that exceed the occurrence threshold."""
 
-    def find_potential_spam_users(self, timespan, occurrence):
-        set_users_having_projects = self.get_users_having_projects()
-        arr = [
-            {
-                'id': user.id,
-                'username': user.username,
-                'first_name': user.first_name,
-                'last_name': user.last_name,
-                'date_joined': user.date_joined,
-                'unix_joined': user.date_joined.timestamp(),
-                'email': user.email,
-                'last_login': user.last_login,
-            }
-            for user in User.objects.all().order_by('date_joined')
+        suspicious_groups = [
+            (gid, group) for gid, group in grouped_users.items() if len(group) > occurrence
         ]
 
-        grouped = {}
-        group_count = 0
-        for idx, user in enumerate(arr):
-            prev = arr[idx - 1] if idx > 0 else None
-            diff = user['unix_joined'] - prev['unix_joined'] if prev else timespan
+        potential_users: List[UserRow] = []
+        for gid, members in suspicious_groups:
+            group_size = len(members)
+            if not group_size:
+                continue
 
-            if prev and diff >= timespan:
-                group_count += 1
+            start, end = members[0]["unix_joined"], members[-1]["unix_joined"]
+            duration = round(end - start, 3) if group_size > 1 else 0
 
-            grouped.setdefault(group_count, [])
-            grouped = self.append_to_group(grouped, group_count, user, set_users_having_projects)
+            for member in members:
+                potential_users.append(
+                    {
+                        "id": member["id"],
+                        "email": member["email"],
+                        "username": member["username"],
+                        "first_name": member["first_name"],
+                        "last_name": member["last_name"],
+                        "date_joined": self._date_string(member["date_joined"]),
+                        "last_login": self._date_string(member["last_login"]),
+                        "has_project": member["has_project"],
+                        "group_id": gid,
+                        "group_size": group_size,
+                        "group_duration_seconds": duration,
+                    }
+                )
 
-        grouped_clean = {k: v for k, v in grouped.items() if len(v) > occurrence}
-        potential_spam_users = [user for group in grouped_clean.values() for user in group]
+        return potential_users
 
-        return potential_spam_users, len(set_users_having_projects)
+    def find_potential_spam_users(self, timespan: int, occurrence: int):
+        users_with_projects = self.get_users_having_projects()
+        raw_users = self._user_queryset()
+        user_rows = self._rows_from_user_values(raw_users, users_with_projects)
+
+        if not user_rows:
+            return [], 0, len(users_with_projects), 0
+
+        grouped_users = self._group_users(user_rows, timespan)
+        potential_spam_users = self._flatten_suspicious_groups(grouped_users, occurrence)
+
+        potential_with_projects = sum(1 for user in potential_spam_users if user["has_project"])
+        return potential_spam_users, len(user_rows), len(users_with_projects), potential_with_projects
 
     def handle(self, *args, **options):
-        no_total_users = User.objects.count()
-        print(f'Total no of users: {no_total_users}')
+        total_users = User.objects.count()
+        self.stdout.write(f"Total number of users: {total_users}")
 
-        potential_spam_users, no_users_having_projects = self.find_potential_spam_users(
-            options['timespan'], options['occurrence']
+        potential_spam_users, pool_size, users_with_projects, potential_with_projects = self.find_potential_spam_users(
+            options["timespan"], options["occurrence"]
         )
 
-        percentage = (100 / no_total_users) * len(potential_spam_users) if no_total_users else 0
-        print(
-            f'Potential spam users: {len(potential_spam_users)}  {percentage:.2f}% / '
-            f'of which have at least one project {no_users_having_projects}'
+        percentage_of_pool = (100 * len(potential_spam_users) / pool_size) if pool_size else 0
+        percentage_of_total = (100 * len(potential_spam_users) / total_users) if total_users else 0
+
+        self.stdout.write(
+            "Potential spam users: "
+            f"{len(potential_spam_users)} [{percentage_of_pool:.2f}% of pool, {percentage_of_total:.2f}% of total]"
+        )
+        self.stdout.write(
+            "Potential spam users having at least one project: "
+            f"{potential_with_projects} / Total users with at least one project: {users_with_projects}"
         )
 
-        self.save_csv(potential_spam_users, options['output_file'])
-        if options['print']:
-            self.print_file(options['output_file'])
+        self.save_csv(potential_spam_users, options["output_file"])
+        if options["print"]:
+            self.print_file(options["output_file"])
