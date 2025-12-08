@@ -1,4 +1,5 @@
 
+from rdmo.config.models import Plugin
 from rdmo.conditions.models import Condition
 from rdmo.domain.models import Attribute
 from rdmo.options.models import Option, OptionSet
@@ -7,6 +8,7 @@ from rdmo.tasks.models import Task
 from rdmo.views.models import View
 
 RDMO_MODEL_PATH_MAPPER = {
+    'config.plugin': Plugin,
     'conditions.condition': Condition,
     'domain.attribute': Attribute,
     'options.optionset': OptionSet,
