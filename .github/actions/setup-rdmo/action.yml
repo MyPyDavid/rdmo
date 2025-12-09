@@ -1,0 +1,89 @@
+name: Setup RDMO environment
+
+inputs:
+  python-version:
+    description: Python version to install
+    required: true
+  db-backend:
+    description: Database backend (mysql or postgres)
+    required: true
+  wheel-extras:
+    description: Extras to install from the wheel
+    default: ci
+    required: false
+  install-wheel:
+    description: Whether to install the RDMO wheel
+    default: true
+    required: false
+  install-latex:
+    description: Whether to install LaTeX and pandoc dependencies
+    default: true
+    required: false
+  prepare-env:
+    description: Whether to prepare media and log folders
+    default: true
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+      with:
+        persist-credentials: false
+
+    - name: Set up Python ${{ inputs.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+
+    - name: Download wheel
+      uses: actions/download-artifact@v6
+      with:
+        name: Packages
+        path: dist
+
+    - name: Install LaTeX and pandoc dependencies
+      if: ${{ inputs.install-latex == 'true' }}
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes pandoc texlive-latex-base texlive-latex-extra texlive-luatex librsvg2-bin
+
+    - name: Upgrade pip
+      shell: bash
+      run: python -m pip install --upgrade pip
+
+    - name: Start and prepare MySQL
+      if: ${{ inputs.db-backend == 'mysql' }}
+      shell: bash
+      run: |
+        sudo systemctl start mysql.service
+        sudo mysql --protocol=socket --user=root --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'root';"
+        sudo mysql --protocol=tcp --user=root --password=root --execute="CREATE DATABASE IF NOT EXISTS rdmo CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+    - name: Start and prepare PostgreSQL
+      if: ${{ inputs.db-backend == 'postgres' }}
+      shell: bash
+      run: |
+        sudo systemctl start postgresql.service
+        pg_isready
+        sudo -u postgres psql --command="CREATE USER postgres_user PASSWORD 'postgres_password' CREATEDB" || true
+        sudo -u postgres psql --command="ALTER ROLE postgres_user CREATEDB" || true
+        sudo -u postgres psql --command="CREATE DATABASE rdmo OWNER postgres_user" || true
+
+    - name: Prepare environment folders
+      if: ${{ inputs.prepare-env == 'true' }}
+      shell: bash
+      run: |
+        cp -r testing/media testing/media_root
+        mkdir testing/log
+
+    - name: Install RDMO from wheel
+      if: ${{ inputs.install-wheel == 'true' }}
+      shell: bash
+      env:
+        GITHUB_DB_BACKEND: ${{ inputs.db-backend }}
+      run: |
+        python -m pip install "$(ls dist/*.whl)[${{ inputs.wheel-extras }}]"

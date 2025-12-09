@@ -56,41 +56,15 @@ jobs:
       matrix:
         python-version: ['3.10', '3.13']
         db-backend: [mysql, postgres]
+    env:
+      GITHUB_DB_BACKEND: ${{ matrix.db-backend }}
     steps:
-    - uses: actions/checkout@v5
-      with:
-        persist-credentials: false
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
+    - name: Set up environment
+      uses: ./.github/actions/setup-rdmo
       with:
         python-version: ${{ matrix.python-version }}
-        cache: pip
-    - name: Download wheel
-      uses: actions/download-artifact@v6
-      with:
-        name: Packages
-        path: dist
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update && sudo apt-get install --yes pandoc texlive-latex-base texlive-latex-extra texlive-luatex librsvg2-bin
-        pandoc --version
-        python -m pip install --upgrade pip
-        python -m pip --version
-    - name: Install rdmo[mysql] from wheel and start mysql
-      run: |
-        python -m pip install "$(ls dist/*.whl)[ci,mysql]"
-        sudo systemctl start mysql.service
-      if: matrix.db-backend == 'mysql'
-    - name: Install rdmo[postgres] from wheel and start postgresql
-      run: |
-        python -m pip install "$(ls dist/*.whl)[ci,postgres]"
-        sudo systemctl start postgresql.service
-        pg_isready
-        sudo -u postgres psql --command="CREATE USER postgres_user PASSWORD 'postgres_password' CREATEDB"
-      if: matrix.db-backend == 'postgres'
-    - name: Prepare Env
-      run: |
-        cp -r testing/media testing/media_root && mkdir testing/log
+        db-backend: ${{ matrix.db-backend }}
+        wheel-extras: ci,${{ matrix.db-backend }}
     - name: Run package status tests first
       run: |
         pytest rdmo/core/tests/test_package_status.py --nomigrations --verbose
@@ -98,8 +72,6 @@ jobs:
     - name: Run Tests
       run: |
         pytest -p randomly -p no:cacheprovider --cov --reuse-db --numprocesses=auto --dist=loadscope
-      env:
-        GITHUB_DB_BACKEND: ${{ matrix.db-backend }}
     - name: Upload coverage data to coveralls.io
       uses: coverallsapp/github-action@648a8eb78e6d50909eff900e4ec85cab4524a45b # v2.3.6
       with:
@@ -116,33 +88,15 @@ jobs:
       matrix:
         python-version: ['3.13']
         db-backend: [postgres]
+    env:
+      GITHUB_DB_BACKEND: ${{ matrix.db-backend }}
     steps:
-    - uses: actions/checkout@v5
-      with:
-        persist-credentials: false
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
+    - name: Set up environment
+      uses: ./.github/actions/setup-rdmo
       with:
         python-version: ${{ matrix.python-version }}
-        cache: pip
-    - name: Download wheel
-      uses: actions/download-artifact@v6
-      with:
-        name: Packages
-        path: dist
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update && sudo apt install --yes pandoc texlive-latex-base texlive-latex-extra texlive-luatex librsvg2-bin
-        python -m pip install --upgrade pip
-    - name: Install rdmo[postgres] from wheel and start postgresql
-      run: |
-        python -m pip install "$(ls dist/*.whl)[ci,postgres]"
-        sudo systemctl start postgresql.service
-        pg_isready
-        sudo -u postgres psql --command="CREATE USER postgres_user PASSWORD 'postgres_password' CREATEDB"
-    - name: Prepare Env
-      run: |
-        cp -r testing/media testing/media_root && mkdir testing/log
+        db-backend: ${{ matrix.db-backend }}
+        wheel-extras: ci,${{ matrix.db-backend }}
     - name: Install e2e tests dependencies
       run: |
         playwright install --with-deps chromium
@@ -158,6 +112,36 @@ jobs:
       with:
         name: screenshots
         path: screenshots/**/*.png
+
+  migrations-upgrade:
+    name: "Migrations upgrade check (${{ matrix.db-backend }})"
+    needs: build-wheel
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        db-backend: [mysql, postgres]
+    env:
+      GITHUB_DB_BACKEND: ${{ matrix.db-backend }}
+    steps:
+      - name: Set up environment
+        uses: ./.github/actions/setup-rdmo
+        with:
+          python-version: "3.13"
+          db-backend: ${{ matrix.db-backend }}
+          install-wheel: false
+          wheel-extras: ci,${{ matrix.db-backend }}
+      - name: Install rdmo main branch
+        run: |
+          python -m pip install "rdmo[ci,${{ matrix.db-backend }}] @ git+https://github.com/rdmorganiser/rdmo@main"
+      - name: Apply migrations for main branch
+        run: |
+          python testing/manage.py migrate
+      - name: Install rdmo from current branch
+        run: |
+          python -m pip install --force-reinstall "$(ls dist/*.whl)[ci,${{ matrix.db-backend }}]"
+      - name: Run upgrade command
+        run: |
+          python testing/manage.py upgrade
 
   coveralls:
     name: Indicate completion to coveralls
@@ -251,6 +235,7 @@ jobs:
       - test
       - coveralls
       - test-e2e
+      - migrations-upgrade
       - dev-setup
       - dependencies
     runs-on: ubuntu-24.04
