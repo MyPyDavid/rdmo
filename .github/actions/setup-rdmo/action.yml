@@ -60,9 +60,15 @@ runs:
       shell: bash
       run: |
         sudo systemctl start mysql.service
-        sudo mysqladmin --protocol=socket --user=root status --silent
-        sudo mysql --protocol=socket --user=root --password='' --connect-expired-password --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'root'; FLUSH PRIVILEGES;" \
-          || sudo mysql --protocol=socket --user=root --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'root'; FLUSH PRIVILEGES;"
+        for i in $(seq 1 30); do
+          if sudo mysqladmin --protocol=socket --user=root ping --silent; then
+            ready=true
+            break
+          fi
+          sleep 1
+        done
+        [[ "${ready:-false}" == true ]] || { echo "MySQL did not become ready"; exit 1; }
+        sudo mysql --protocol=socket --user=root --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'root'; FLUSH PRIVILEGES;" || true
         sudo mysql --protocol=tcp --user=root --password=root --execute="CREATE DATABASE IF NOT EXISTS rdmo CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
     - name: Start and prepare PostgreSQL
