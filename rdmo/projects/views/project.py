@@ -13,6 +13,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.generic import DeleteView, DetailView, TemplateView
 from django.views.generic.edit import FormMixin
 
+from rdmo.config.plugin_type_constants import PluginType
 from rdmo.config.models import Plugin
 from rdmo.core.views import CSRFViewMixin, ObjectPermissionMixin, RedirectViewMixin, StoreIdViewMixin
 from rdmo.questions.models import Catalog
@@ -86,7 +87,11 @@ class ProjectDetailView(ObjectPermissionMixin, DetailView):
         context['memberships'] = memberships.order_by('user__last_name', '-project__level')
         context['integrations'] = integrations.order_by('provider_key', '-project__level')
         if settings.PLUGINS:
-            plugins = Plugin.objects.for_context(plugin_type='issue_provider', project=project, user=self.request.user)
+            plugins = Plugin.objects.for_context(
+                plugin_type=PluginType.PROJECT_ISSUE_PROVIDER.value,
+                project=project,
+                user=self.request.user
+            )
             providers = {i.url_name: i.initialize_class() for i in plugins}
             context['providers'] = providers
         context['issues'] = [
