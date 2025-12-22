@@ -161,7 +161,7 @@ class Command(BaseCommand):
                 return
             # friendly no-op message instead of broken/partial code
             raise CommandError(
-                "Nothing to do. Use --clear and/or one of --from-settings PATH."
+                "Nothing to do. Use --clear and/or --from-settings."
             )
 
         if from_settings_flag:

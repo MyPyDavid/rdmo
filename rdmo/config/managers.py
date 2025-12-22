@@ -22,6 +22,7 @@ class PluginQuerySet(
             self
                 .filter_for_site(project.site)
                 .filter(catalogs=project.catalog)
+                .filter(available=True)
                 .filter(models.Q(groups=None) | models.Q(groups__in=project.groups))
         )
 

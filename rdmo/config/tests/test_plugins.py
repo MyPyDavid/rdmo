@@ -52,3 +52,46 @@ def test_plugin_save_sets_issue_provider_type():
 
     plugin = Plugin.objects.get(pk=instance.pk)
     assert plugin.plugin_type == PluginType.PROJECT_ISSUE_PROVIDER
+
+
+@pytest.mark.django_db
+def test_plugin_str_shows_uri():
+    instance = Plugin.objects.create(
+        uri_prefix="https://example.org/terms",
+        uri_path="plugins/plugin-str-test",
+        python_path="plugins.project_export.exports.SimpleExportPlugin",
+        title_lang1="String repr plugin",
+        available=True,
+    )
+
+    assert str(instance) == instance.uri
+
+
+@pytest.mark.django_db
+def test_filter_for_project_respects_availability():
+    project = Project.objects.get(id=1)
+
+    allowed = Plugin.objects.create(
+        uri_prefix="https://example.org/terms",
+        uri_path="plugins/available-plugin",
+        python_path="plugins.project_export.exports.SimpleExportPlugin",
+        title_lang1="Available plugin",
+        available=True,
+    )
+    allowed.catalogs.add(project.catalog)
+    allowed.sites.add(project.site)
+
+    blocked = Plugin.objects.create(
+        uri_prefix="https://example.org/terms",
+        uri_path="plugins/unavailable-plugin",
+        python_path="plugins.project_export.exports.SimpleExportPlugin",
+        title_lang1="Unavailable plugin",
+        available=False,
+    )
+    blocked.catalogs.add(project.catalog)
+    blocked.sites.add(project.site)
+
+    qs = Plugin.objects.filter_for_project(project)
+
+    assert allowed in qs
+    assert blocked not in qs
