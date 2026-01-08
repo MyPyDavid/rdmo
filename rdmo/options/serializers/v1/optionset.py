@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from rdmo.config.constants import PLUGIN_TYPES
+from rdmo.config.models import Plugin
 from rdmo.core.serializers import (
     ElementModelSerializerMixin,
     ReadOnlyObjectPermissionSerializerMixin,
@@ -29,6 +31,11 @@ class OptionSetSerializer(ThroughModelSerializerMixin, ElementModelSerializerMix
 
     options = OptionSetOptionSerializer(source='optionset_options', read_only=False, required=False, many=True)
     questions = serializers.PrimaryKeyRelatedField(queryset=Question.objects.all(), required=False, many=True)
+    plugins = serializers.PrimaryKeyRelatedField(
+        queryset=Plugin.objects.filter(plugin_type=PLUGIN_TYPES.OPTIONSET_PROVIDER),
+        required=False,
+        many=True
+    )
 
     read_only = serializers.SerializerMethodField()
 
@@ -50,6 +57,7 @@ class OptionSetSerializer(ThroughModelSerializerMixin, ElementModelSerializerMix
             'options',
             'conditions',
             'questions',
+            'plugins',
             'editors',
             'read_only',
             'condition_uris',

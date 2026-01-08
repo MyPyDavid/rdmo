@@ -34,7 +34,8 @@ class OptionSetViewSet(ModelViewSet):
         'optionset_options__option',
         'conditions',
         'questions',
-        'editors'
+        'editors',
+        'plugins'
     )
 
     filter_backends = (SearchFilter, DjangoFilterBackend)

@@ -98,6 +98,16 @@ def test_detail(db, client, username, password):
         assert response.status_code == status_map['detail'][username], response.json()
 
 
+def test_detail_includes_plugins(db, client):
+    client.login(username='editor', password='editor')
+
+    instance = OptionSet.objects.get(uri_path='plugin')
+    url = reverse(urlnames['detail'], args=[instance.pk])
+    response = client.get(url)
+    assert response.status_code == status_map['detail']['editor'], response.json()
+    assert response.json().get('plugins') == [3]
+
+
 @pytest.mark.parametrize('username,password', users)
 def test_nested(db, client, username, password):
     client.login(username=username, password=password)
@@ -233,6 +243,7 @@ def test_update_m2m(db, client, username, password):
             'order': instance.order,
             'options': optionset_options,
             'conditions': conditions,
+            'plugins': [3],
         }
         response = client.put(url, data, content_type='application/json')
         assert response.status_code == status_map['update'][username], response.json()

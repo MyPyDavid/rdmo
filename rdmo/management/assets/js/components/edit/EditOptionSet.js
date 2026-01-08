@@ -22,7 +22,7 @@ import useDeleteModal from '../../hooks/useDeleteModal'
 const EditOptionSet = ({ config, optionset, elements, elementActions }) => {
 
   const { sites, providers } = config
-  const { elementAction, parent, conditions, options } = elements
+  const { elementAction, parent, conditions, options, plugins } = elements
 
   const updateOptionSet = (key, value) => elementActions.updateElement(optionset, {[key]: value})
   const storeOptionSet = (back) => elementActions.storeElement('optionsets', optionset, elementAction, back)
@@ -37,6 +37,8 @@ const EditOptionSet = ({ config, optionset, elements, elementActions }) => {
   const [showDeleteModal, openDeleteModal, closeDeleteModal] = useDeleteModal()
 
   const info = <OptionSetInfo optionset={optionset} elements={elements} elementActions={elementActions} />
+
+  const optionsetPlugins = plugins.filter((plugin) => plugin.plugin_type === 'optionset_provider')
 
   return (
     <div className="panel panel-default panel-edit">
@@ -105,6 +107,9 @@ const EditOptionSet = ({ config, optionset, elements, elementActions }) => {
 
         <Select config={config} element={optionset} field="provider_key"
                 options={providers} onChange={updateOptionSet} />
+
+        <MultiSelect config={config} element={optionset} field="plugins" options={optionsetPlugins}
+                     addText={gettext('Add existing plugin')} onChange={updateOptionSet} />
 
         {get(config, 'settings.multisite') && <Select config={config} element={optionset} field="editors"
                                                       options={sites} onChange={updateOptionSet} isMulti />}
