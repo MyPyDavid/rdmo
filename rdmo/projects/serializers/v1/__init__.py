@@ -23,7 +23,13 @@ from ...models import (
     Value,
     Visibility,
 )
-from ...validators import ProjectParentValidator, ValueConflictValidator, ValueQuotaValidator, ValueTypeValidator
+from ...validators import (
+    ProjectParentValidator,
+    ValueConflictValidator,
+    ValuePluginValidator,
+    ValueQuotaValidator,
+    ValueTypeValidator,
+)
 
 
 class ProjectUserSerializer(serializers.ModelSerializer):
@@ -316,7 +322,8 @@ class ProjectValueSerializer(serializers.ModelSerializer):
         validators = (
             ValueConflictValidator(),
             ValueQuotaValidator(),
-            ValueTypeValidator()
+            ValueTypeValidator(),
+            ValuePluginValidator(),
         )
 
 

@@ -19,6 +19,7 @@ from rdmo.core.constants import (
     VALUE_TYPE_PHONE,
     VALUE_TYPE_URL,
 )
+from rdmo.core.plugins import get_plugins
 from rdmo.core.utils import human2bytes
 from rdmo.core.validators import InstanceValidator
 
@@ -149,3 +150,12 @@ class ValueTypeValidator:
                     settings.PROJECT_VALUES_VALIDATION_PHONE_REGEX,
                     settings.PROJECT_VALUES_VALIDATION_PHONE_MESSAGE
                 )(text)
+
+
+class ValuePluginValidator:
+
+    requires_context = True
+
+    def __call__(self, data, serializer):
+        for plugin in get_plugins('PROJECT_VALUE_VALIDATORS').values():
+            plugin.validate_value(data, serializer)
