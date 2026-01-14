@@ -35,8 +35,16 @@ class PluginPythonPathValidator(InstanceValidator):
                 'python_path': _("This path is not in the configured paths.")
             })
 
-        if self.instance and self.instance.available:
-            try:  # a double-check, maybe not needed
+        if self.instance:
+            if self.instance.available:
+                try:  # a double-check, maybe not needed
+                    import_string(data.get('python_path'))
+                except (ModuleNotFoundError, ImportError):
+                    self.raise_validation_error({
+                        'python_path': _("This path could not be not imported.")
+                    })
+        elif data.get('available', True):
+            try:
                 import_string(data.get('python_path'))
             except (ModuleNotFoundError, ImportError):
                 self.raise_validation_error({
