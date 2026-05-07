@@ -28,6 +28,7 @@ class AttributeViewSet(ModelViewSet):
                                 .annotate(projects_count=models.Count('values__project', distinct=True)) \
                                 .prefetch_related('conditions', 'pages', 'questionsets', 'questions',
                                                   'tasks_as_start', 'tasks_as_end', 'editors') \
+                                .select_related('parent') \
                                 .order_by('path')
 
     filter_backends = (SearchFilter, DjangoFilterBackend)

@@ -375,7 +375,7 @@ class QuestionViewSet(ModelViewSet):
         if self.action in ['index']:
             return queryset
         elif self.action in ('nested', 'export', 'detail_export'):
-            return queryset.prefetch_elements().select_related('attribute')
+            return queryset.prefetch_elements().select_related('attribute', 'default_option')
         else:
             return queryset.prefetch_related(
                 'conditions',
@@ -383,7 +383,7 @@ class QuestionViewSet(ModelViewSet):
                 'pages',
                 'questionsets',
                 'editors'
-            ).select_related('attribute')
+            ).select_related('attribute', 'default_option')
 
     @action(detail=False)
     def index(self, request):
