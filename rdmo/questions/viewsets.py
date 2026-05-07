@@ -33,6 +33,7 @@ from .serializers.v1 import (
     PageNestedSerializer,
     PageSerializer,
     QuestionIndexSerializer,
+    QuestionListSerializer,
     QuestionSerializer,
     QuestionSetIndexSerializer,
     QuestionSetNestedSerializer,
@@ -370,12 +371,21 @@ class QuestionViewSet(ModelViewSet):
         'comment'
     )
 
+    def get_serializer_class(self):
+        return QuestionListSerializer if self.action == 'list' else QuestionSerializer
+
     def get_queryset(self):
         queryset = Question.objects.all()
         if self.action in ['index']:
             return queryset
         elif self.action in ('nested', 'export', 'detail_export'):
             return queryset.prefetch_elements().select_related('attribute', 'default_option')
+        elif self.action == 'list':
+            return queryset.prefetch_related(
+                'conditions',
+                'optionsets',
+                'editors'
+            ).select_related('attribute', 'default_option')
         else:
             return queryset.prefetch_related(
                 'conditions',
