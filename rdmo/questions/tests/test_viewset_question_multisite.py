@@ -2,6 +2,7 @@ import xml.etree.ElementTree as et
 
 import pytest
 
+from django.contrib.auth.models import User
 from django.db.models import Max
 from django.urls import reverse
 
@@ -121,7 +122,12 @@ def test_create_page(db, client, username, password):
                 'pages': [page.id]
             }
             response = client.post(url, data, content_type='application/json')
-            assert response.status_code == status_map['create'][username], response.json()
+            expected_status_code = status_map['create'][username]
+            if expected_status_code == 201 and not User.objects.get(username=username).has_perm(
+                'questions.change_page_object', page
+            ):
+                expected_status_code = 403
+            assert response.status_code == expected_status_code, response.json()
 
             if response.status_code == 201:
                 new_instance = Question.objects.get(id=response.json().get('id'))
@@ -163,7 +169,12 @@ def test_create_questionset(db, client, username, password):
                 'questionsets': [questionset.id]
             }
             response = client.post(url, data, content_type='application/json')
-            assert response.status_code == status_map['create'][username], response.json()
+            expected_status_code = status_map['create'][username]
+            if expected_status_code == 201 and not User.objects.get(username=username).has_perm(
+                'questions.change_questionset_object', questionset
+            ):
+                expected_status_code = 403
+            assert response.status_code == expected_status_code, response.json()
 
             if response.status_code == 201:
                 new_instance = Question.objects.get(id=response.json().get('id'))
