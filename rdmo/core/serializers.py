@@ -6,6 +6,7 @@ from django.core.validators import MaxLengthValidator
 from django.db.models import Max
 
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.utils import model_meta
 
 from rdmo.core.utils import get_language_warning, get_languages, markdown2html
@@ -74,7 +75,30 @@ class TranslationSerializerMixin:
 
 class ThroughModelSerializerMixin:
 
+    def validate(self, data):
+        data = super().validate(data)
+        self.check_parent_object_permissions(data)
+        return data
+
+    def check_parent_object_permissions(self, validated_data):
+        try:
+            self.Meta.parent_fields  # noqa: B018
+        except AttributeError:
+            return
+
+        request = self.context.get('request')
+        if request is None:
+            return
+
+        for field_name, _source_name, _target_name, _through_name in self.Meta.parent_fields:
+            for parent in validated_data.get(field_name) or []:
+                opts = parent._meta
+                permission = f'{opts.app_label}.change_{opts.model_name}_object'
+                if not request.user.has_perm(permission, parent):
+                    raise PermissionDenied()
+
     def create(self, validated_data):
+        self.check_parent_object_permissions(validated_data)
         parent_fields = self.get_parent_fields(validated_data)
         through_fields = self.get_through_fields(validated_data)
         instance = super().create(validated_data)
@@ -83,6 +107,7 @@ class ThroughModelSerializerMixin:
         return instance
 
     def update(self, instance, validated_data):
+        self.check_parent_object_permissions(validated_data)
         self.get_parent_fields(validated_data)
         through_fields = self.get_through_fields(validated_data)
         instance = super().update(instance, validated_data)
