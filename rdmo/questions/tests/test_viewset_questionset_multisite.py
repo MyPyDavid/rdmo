@@ -2,7 +2,6 @@ import xml.etree.ElementTree as et
 
 import pytest
 
-from django.contrib.auth.models import User
 from django.db.models import Max
 from django.urls import reverse
 
@@ -121,12 +120,9 @@ def test_create_page(db, client, username, password):
                 'pages': [page.id]
             }
             response = client.post(url, data, content_type='application/json')
-            expected_status_code = status_map['create'][username]
-            if expected_status_code == 201 and not User.objects.get(username=username).has_perm(
-                'questions.change_page_object', page
-            ):
-                expected_status_code = 403
-            assert response.status_code == expected_status_code, response.json()
+            assert response.status_code == get_obj_perms_status_code(
+                page, username, 'create-parent'
+            ), response.json()
 
             if response.status_code == 201:
                 new_instance = QuestionSet.objects.get(id=response.json().get('id'))

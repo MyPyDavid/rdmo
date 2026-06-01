@@ -3,6 +3,8 @@ import pytest
 from django.contrib.sites.models import Site
 from django.urls import reverse
 
+from rdmo.core.tests.constants import status_map_object_permissions as status_map
+
 from ..models import Catalog, Page, Question, QuestionSet, Section
 
 
@@ -113,5 +115,5 @@ def test_bar_editor_cannot_create_child_on_foo_parent(
     before_count = getattr(parent, through_name).count()
     response = client.post(reverse(urlname), payload_builder(instance, parent), content_type='application/json')
 
-    assert response.status_code == 403, response.json()
+    assert response.status_code == status_map['create-parent']['foo-element']['bar-editor'], response.json()
     assert getattr(parent, through_name).count() == before_count
