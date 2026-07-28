@@ -128,7 +128,16 @@ class ProjectViewSet(ModelViewSet):
     filter_for_user = False  # flag for get_queryset to return only projects like for a regular user
 
     def get_queryset(self):
-        queryset = Project.objects.filter_user(self.request.user, self.filter_for_user).distinct().prefetch_related(
+        queryset = Project.objects.filter_user(self.request.user, self.filter_for_user).distinct()
+
+        # Resolving conditions only needs the project itself. In particular, it does
+        # not use the related objects or the last_changed annotation required by the
+        # project serializers. Avoid loading those for the resolve action, which is
+        # called frequently while an interview is being completed.
+        if self.action == 'resolve':
+            return queryset
+
+        queryset = queryset.prefetch_related(
             'snapshots',
             'views',
             Prefetch('memberships', queryset=Membership.objects.select_related('user'), to_attr='memberships_list')
@@ -201,7 +210,10 @@ class ProjectViewSet(ModelViewSet):
         set_prefix = request.GET.get('set_prefix')
         set_index = request.GET.get('set_index')
 
-        values = self.get_object().values.filter(snapshot_id=snapshot_id).select_related('attribute', 'option')
+        values = (
+            self.get_object().values.filter(snapshot_id=snapshot_id)
+            .select_related('attribute', 'option').order_by()
+        )
 
         page_id = request.GET.get('page')
         if page_id:
@@ -308,7 +320,7 @@ class ProjectViewSet(ModelViewSet):
         conditions = Condition.objects.select_related('source', 'target_option').in_bulk(condition_ids)
 
         # get all values of the project
-        values = project.values.filter(snapshot=None).select_related('attribute', 'option')
+        values = project.values.filter(snapshot=None).select_related('attribute', 'option').order_by()
 
         # second pass: resolve conditions
         for params in validated_data:

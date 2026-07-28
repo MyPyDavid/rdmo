@@ -28,3 +28,35 @@ def test_queries(db, client, django_assert_max_num_queries, method, urlname, max
             response = client.post(url)
 
     assert response.status_code == 200
+
+
+@pytest.mark.performance
+def test_resolve_queries(db, client, django_assert_max_num_queries):
+    client.login(username='admin', password='admin')
+    url = reverse('v1-projects:project-resolve', args=[1])
+    data = [
+        {
+            'set_prefix': '',
+            'set_index': 0,
+            'element_type': 'questions',
+            'element_id': 104,
+        },
+        {
+            'set_prefix': '',
+            'set_index': 1,
+            'element_type': 'questions',
+            'element_id': 104,
+        },
+    ]
+
+    # Request authentication and permissions plus the project, the
+    # question-condition relation, the conditions, and the project values.
+    with django_assert_max_num_queries(9):
+        response = client.post(url, data, content_type='application/json')
+
+    assert response.status_code == 200
+    assert [
+        {key: value for key, value in result.items() if key != 'result'}
+        for result in response.json()
+    ] == data
+    assert all(isinstance(result['result'], bool) for result in response.json())
