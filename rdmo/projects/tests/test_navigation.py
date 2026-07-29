@@ -116,3 +116,18 @@ def test_compute_navigation_uses_short_title_as_title(db):
     pages = section_nav.get('pages', [])
     page_nav = next((p for p in pages if p['id'] == page.id), None)
     assert page_nav.get('title') == 'PageShorty'
+
+
+def test_compute_navigation_renders_title_as_html(db):
+    project = Project.objects.get(id=1)
+    project.catalog.prefetch_elements()
+
+    section = project.catalog.elements[0]
+    section.short_title_lang1 = 'Research & **development**'
+    section.save()
+
+    section = project.catalog.sections.get(id=section.id)
+    navigation = compute_navigation(project, section)
+
+    section_nav = next(item for item in navigation if item['id'] == section.id)
+    assert section_nav['title'] == 'Research &amp; <strong>development</strong>'
