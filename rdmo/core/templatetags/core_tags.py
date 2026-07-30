@@ -11,6 +11,7 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import get_language, to_locale
 
 from rdmo import __version__
+from rdmo.core.navigation import get_navigation_items
 from rdmo.core.utils import markdown2html, remove_html_special_characters
 
 register = template.Library()
@@ -138,3 +139,7 @@ def startswith(text, starts):
 @stringfilter
 def clean(string):
     return remove_html_special_characters(string)
+
+@register.simple_tag
+def navigation_items():
+    return get_navigation_items()
