@@ -140,6 +140,6 @@ def startswith(text, starts):
 def clean(string):
     return remove_html_special_characters(string)
 
-@register.simple_tag
-def navigation_items():
-    return get_navigation_items()
+@register.simple_tag(takes_context=True)
+def navigation_items(context):
+    return get_navigation_items(context['request'].user)
