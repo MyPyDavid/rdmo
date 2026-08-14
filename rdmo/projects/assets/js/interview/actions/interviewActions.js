@@ -182,7 +182,7 @@ export function fetchOptionsError(error) {
   return {type: FETCH_OPTIONS_ERROR, error}
 }
 
-export function fetchValues(page, refresh = false) {
+export function fetchValues(page, refresh = false, rejectOnError = false) {
   const pendingId = `fetchValues/${page.id}`
 
   return (dispatch, getState) => {
@@ -190,17 +190,26 @@ export function fetchValues(page, refresh = false) {
     dispatch(fetchValuesInit())
     return ValueApi.fetchValues(projectId, { attribute: page.attributes })
       .then((fetchedValues) => {
-        const values = refresh ? (
-          // if the values are just refreshed after a value is stores or deleted, loop
-          // over the existing values and inject the fetched values, keeping unsaved values
-          getState().interview.values.map(value => {
-            const fetchedValue = fetchedValues.find(v => compareValues(v, value))
-            return isNil(fetchedValue) ? value : fetchedValue
+        const values = refresh ? [...fetchedValues] : fetchedValues
+
+        if (refresh) {
+          // Preserve unsaved values, since they are not included in the response from the backend.
+          getState().interview.values.filter((value) => isNil(value.id)).forEach((value) => {
+            const question = page.questions.find((question) => question.attribute === value.attribute)
+            const widgetType = question && question.widget_type
+
+            if (!values.some((fetchedValue) => compareValues(fetchedValue, value, widgetType))) {
+              values.push(value)
+            }
           })
-        ) : (
-          // when loading the page, discard all existing values
-          fetchedValues
-        )
+
+          values.sort((a, b) => (
+            (a.attribute - b.attribute) ||
+            a.set_prefix.localeCompare(b.set_prefix) ||
+            (a.set_index - b.set_index) ||
+            (a.collection_index - b.collection_index)
+          ))
+        }
 
         const sets = gatherSets(values, page)
 
@@ -214,6 +223,9 @@ export function fetchValues(page, refresh = false) {
       .catch((error) => {
         dispatch(removeFromPending(pendingId))
         dispatch(fetchValuesError(error))
+        if (rejectOnError) {
+          throw error
+        }
       })
   }
 }
@@ -293,7 +305,7 @@ export function resolveConditionsError(error) {
   return {type: RESOLVE_CONDITIONS_ERROR, error}
 }
 
-export function storeValue(value) {
+export function storeValue(value, rejectOnError = false) {
   const valueId = value.id || value.tmp_id
   if (isNil(valueId)) {
     throw new Error('Could not determine valueId in storeValue')
@@ -318,55 +330,52 @@ export function storeValue(value) {
       dispatch(addToPending(pendingId))
       dispatch(storeValueInit(valueId))
 
+      const handleSuccess = (value) => {
+        // set the success flag and start the timeout to remove it. the flag is actually
+        // the stored timeout, so we can cancel any old timeout before starting the a new
+        // one in order to prolong the time the indicator is show with each save
+        clearTimeout(valueSuccess)
+        value.success = setTimeout(() => {
+          dispatch(updateValue(value, {success: false}, false))
+        }, 1000)
+
+        // replace the text with the old text if it was trimmed by the backend
+        // (but not if a new text was inserted, e.g. by an optionset provider)
+        if (valueText.trim() == value.text) {
+          value.text = valueText
+        }
+
+        dispatch(removeFromPending(pendingId))
+        dispatch(storeValueSuccess(value, valueId))
+
+        if (refresh) {
+          // Refresh after storing the value, so the response replaces the temporary value.
+          return dispatch(fetchValues(page, true, rejectOnError))
+        } else {
+          return dispatch(resolveConditions(page, sets))
+        }
+      }
+
       return ValueApi.storeValue(projectId, { ...value, widget_type })
         .then((value) => {
 
           dispatch(fetchNavigation(page))
           dispatch(updateProgress())
 
-          if (refresh) {
-            // if the refresh flag is set, reload all values for the page,
-            // resolveConditions will be called in fetchValues. Preserve unsaved values,
-            // since they are not included in the response from the backend.
-            dispatch(fetchValues(page, true))
-          } else {
-            dispatch(resolveConditions(page, sets))
-          }
-
-          // set the success flag and start the timeout to remove it. the flag is actually
-          // the stored timeout, so we can cancel any old timeout before starting the a new
-          // one in order to prolong the time the indicator is show with each save
-          clearTimeout(valueSuccess)
-          value.success = setTimeout(() => {
-            dispatch(updateValue(value, {success: false}, false))
-          }, 1000)
-
-          // replace the text with the old text if it was trimmed by the backend
-          // (but not if a new text was inserted, e.g. by an optionset provider)
-          if (valueText.trim() == value.text) {
-            value.text = valueText
-          }
-
           // check if there is a file or if a filename is set (when the file was just erased)
           if (isNil(valueFile) && isNil(value.file_name)) {
-            dispatch(removeFromPending(pendingId))
-            dispatch(storeValueSuccess(value, valueId))
+            return handleSuccess(value)
           } else {
             // upload file after the value is created
-            return ValueApi.storeFile(projectId, value, valueFile)
-              .then((value) => {
-                dispatch(removeFromPending(pendingId))
-                dispatch(storeValueSuccess(value, valueId))
-              })
-              .catch((error) => {
-                dispatch(removeFromPending(pendingId))
-                dispatch(storeValueError(error, valueId))
-              })
+            return ValueApi.storeFile(projectId, value, valueFile).then(handleSuccess)
           }
         })
         .catch((error) => {
           dispatch(removeFromPending(pendingId))
           dispatch(storeValueError(error, valueId))
+          if (rejectOnError) {
+            throw error
+          }
         })
     }
   }
@@ -384,16 +393,22 @@ export function storeValueError(error, valueId) {
   return {type: STORE_VALUE_ERROR, error, valueId}
 }
 
-export function createValue(attrs, store) {
+export function createValue(attrs, defaultValue) {
   const value = ValueFactory.create(attrs)
 
   // focus the new value
   value.focus = true
 
-  if (isNil(store)) {
+  if (isNil(defaultValue)) {
     return {type: CREATE_VALUE, value}
+  } else if (defaultValue.pending) {
+    return {type: NOOP}
   } else {
-    return storeValue(value)
+    return (dispatch) => {
+      return dispatch(storeValue(defaultValue, true))
+        .then(() => dispatch({type: CREATE_VALUE, value}))
+        .catch(() => null)
+    }
   }
 }
 

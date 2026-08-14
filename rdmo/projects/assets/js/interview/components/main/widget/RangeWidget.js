@@ -18,9 +18,9 @@ import RangeInput from './RangeInput'
 const RangeWidget = ({ page, question, sets, values, siblings, currentSet, disabled,
                        createValue, updateValue, deleteValue, copyValue }) => {
 
-  const handleCreateValue = (value) => {
+  const handleCreateValue = (value, defaultValue) => {
     initRange(question, value)
-    createValue(value)
+    createValue(value, defaultValue)
   }
 
   const handleEraseValue = (value, attrs) => {
@@ -73,7 +73,6 @@ const RangeWidget = ({ page, question, sets, values, siblings, currentSet, disab
         currentSet={currentSet}
         disabled={disabled}
         createValue={handleCreateValue}
-        updateValue={updateValue}
       />
       <QuestionCopyValues
         question={question}
