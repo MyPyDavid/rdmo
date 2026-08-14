@@ -5,22 +5,16 @@ import pytest
 from playwright.sync_api import Page, Response, expect
 
 from rdmo.projects.models import Value
-from rdmo.questions.models import Question
 
 pytestmark = [pytest.mark.e2e, pytest.mark.django_db(transaction=True)]
 
 
 def test_add_collection_value_preserves_default_external_id(page: Page):
-    question = Question.objects.get(pk=93)
-    question.is_collection = True
-    question.save(update_fields=("is_collection",))
-
     value_filter = {
         "project_id": 1,
-        "attribute_id": question.attribute_id,
+        "attribute_id": 145,
         "snapshot": None,
     }
-    Value.objects.filter(**value_filter).delete()
 
     def is_values_refresh(response: Response) -> bool:
         return (
@@ -38,15 +32,16 @@ def test_add_collection_value_preserves_default_external_id(page: Page):
         ),
     )
 
-    page.goto("/projects/1/interview/85/")
+    page.goto("/projects/1/interview/113/")
 
-    widgets = page.locator(".interview-question .interview-widget")
+    question = page.locator(".interview-question").filter(has_text="Select-creatable default?")
+    widgets = question.locator(".interview-widget")
     expect(widgets).to_have_count(1)
     expect(widgets.nth(0)).to_contain_text("Simple answer 1")
     expect(widgets.nth(0).get_by_text("Default", exact=True)).to_be_visible()
 
     with page.expect_response(is_values_refresh):
-        page.get_by_role("button", name="Add answer").click()
+        question.get_by_role("button", name="Add answer").click()
 
     expect(widgets).to_have_count(2)
     expect(widgets.nth(0)).to_contain_text("Simple answer 1")
