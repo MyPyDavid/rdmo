@@ -9,10 +9,21 @@ class AnswerTree:
 
     def __init__(self, catalog, values, verbose=None):
         self.catalog = catalog
-        self.values = values
+        # Evaluate values once and index them for the two hot access patterns below.
+        # Previously compute_sets issued a separate DISTINCT query and every question
+        # scanned every project value, making answer-tree computation O(elements *
+        # values) for large projects.
+        self.values = list(values)
         self.verbose = tuple(verbose or ())
 
-        self.sets = values.compute_sets()
+        self.sets = defaultdict(set)
+        self.values_by_element_set = defaultdict(list)
+        for value in self.values:
+            # Keep None as a key as well. Although regular answers have an
+            # attribute, this preserves the old ``value.attribute ==
+            # element.attribute`` behaviour for incomplete/imported data.
+            self.sets[value.attribute_id].add((value.set_prefix, value.set_index))
+            self.values_by_element_set[(value.attribute_id, value.set_prefix, value.set_index)].append(value)
         self.conditions = catalog.conditions.in_bulk()
 
         # buffer for the resolved conditions: self.resolved_conditions[element][parent_set]
@@ -183,11 +194,7 @@ class AnswerTree:
         set_prefix, set_index = parent_set
 
         # filter the values for this element and set
-        element_values = list(filter(lambda v: all((
-            v.attribute == element.attribute,
-            v.set_prefix == set_prefix,
-            v.set_index == set_index,
-        )), self.values))
+        element_values = self.values_by_element_set.get((element.attribute_id, set_prefix, set_index), ())
 
         if element_values:
             # if there are values, return them

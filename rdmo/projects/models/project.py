@@ -149,7 +149,11 @@ class Project(MPTTModel, Model):
     def get_answer_tree(self, snapshot=None, verbose=None):
         return AnswerTree(
             self.catalog,
-            self.values.filter(snapshot=snapshot).select_related('attribute', 'option'),
+            # Avoid the related-model joins from Value.Meta.ordering, while retaining
+            # deterministic collection ordering in the answer-tree response.
+            self.values.filter(snapshot=snapshot).select_related('attribute', 'option').order_by(
+                'attribute_id', 'set_prefix', 'set_index', 'collection_index'
+            ),
             verbose=verbose
         ).compute()
 

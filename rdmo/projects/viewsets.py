@@ -2,7 +2,6 @@ from collections import defaultdict
 
 from django.conf import settings
 from django.contrib.sites.shortcuts import get_current_site
-from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.db.models import OuterRef, Prefetch, Q, Subquery
 from django.db.models.functions import Coalesce, Greatest
@@ -130,11 +129,22 @@ class ProjectViewSet(ModelViewSet):
     filter_for_user = False  # flag for get_queryset to return only projects like for a regular user
 
     def get_queryset(self):
-        queryset = Project.objects.filter_user(self.request.user, self.filter_for_user).distinct().prefetch_related(
+        queryset = Project.objects.filter_user(self.request.user, self.filter_for_user).distinct().select_related(
+            'catalog', 'visibility'
+        )
+
+        # The navigation endpoint only needs the project and its catalog. In particular,
+        # snapshots, views, memberships and last_changed are serializer concerns for the
+        # regular project endpoints. Fetching them here used to add three unused queries
+        # and an expensive correlated Value subquery before the answer tree was built.
+        if self.action == 'navigation':
+            return queryset
+
+        queryset = queryset.prefetch_related(
             'snapshots',
             'views',
             Prefetch('memberships', queryset=Membership.objects.select_related('user'), to_attr='memberships_list')
-        ).select_related('catalog', 'visibility')
+        )
 
         # prepare subquery for last_changed
         last_changed_subquery = Subquery(
@@ -187,10 +197,12 @@ class ProjectViewSet(ModelViewSet):
         if section_id is None:
             section = None
         else:
-            try:
-                section = project.catalog.sections.get(pk=section_id)
-            except ObjectDoesNotExist as e:
-                raise NotFound() from e
+            section = next(
+                (section for section in project.catalog.sections.all() if section.pk == int(section_id)),
+                None
+            )
+            if section is None:
+                raise NotFound()
 
         # compute navigation from the answer tree
         navigation = compute_navigation(project, section)
