@@ -32,6 +32,7 @@ from rdmo.questions.prefetch import get_page_prefetch_lookups
 from rdmo.tasks.models import Task
 from rdmo.views.models import View
 
+from .answers import ValueIndex
 from .filters import (
     AttributeFilterBackend,
     OptionFilterBackend,
@@ -215,7 +216,12 @@ class ProjectViewSet(ModelViewSet):
         set_prefix = request.GET.get('set_prefix')
         set_index = request.GET.get('set_index')
 
-        values = self.get_object().values.filter(snapshot_id=snapshot_id).select_related('attribute', 'option')
+        values = ValueIndex(
+            self.get_object().values.filter(snapshot_id=snapshot_id).only(
+                'project_id', 'snapshot_id', 'attribute_id', 'set_prefix', 'set_index', 'set_collection', 'text',
+                'option_id'
+            ).order_by()
+        )
 
         page_id = request.GET.get('page')
         if page_id:
@@ -322,17 +328,27 @@ class ProjectViewSet(ModelViewSet):
         conditions = Condition.objects.select_related('source', 'target_option').in_bulk(condition_ids)
 
         # get all values of the project
-        values = project.values.filter(snapshot=None).select_related('attribute', 'option')
+        values = ValueIndex(
+            project.values.filter(snapshot=None).only(
+                'project_id', 'snapshot_id', 'attribute_id', 'set_prefix', 'set_index', 'set_collection', 'text',
+                'option_id'
+            ).order_by()
+        )
 
         # second pass: resolve conditions
+        resolved = {}
         for params in validated_data:
             set_prefix = params['set_prefix']
             set_index = params['set_index']
             element_type = params['element_type']
             element_id = params['element_id']
 
-            element_conditions = [conditions[condition_id] for condition_id in elements[element_type][element_id]]
-            params['result'] = check_conditions(element_conditions, values, set_prefix, set_index)
+            element_condition_ids = elements[element_type][element_id]
+            cache_key = (tuple(sorted(element_condition_ids)), set_prefix, set_index)
+            if cache_key not in resolved:
+                element_conditions = [conditions[condition_id] for condition_id in element_condition_ids]
+                resolved[cache_key] = check_conditions(element_conditions, values, set_prefix, set_index)
+            params['result'] = resolved[cache_key]
 
         return Response(validated_data)
 

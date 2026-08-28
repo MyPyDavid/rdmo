@@ -1,6 +1,6 @@
 import pytest
 
-from rdmo.projects.answers import AnswerTree
+from rdmo.projects.answers import AnswerTree, ValueIndex
 from rdmo.projects.models import Value
 
 
@@ -24,6 +24,31 @@ def test_value_index_preserves_element_lookup_semantics(mocker):
         ]
 
         assert answer_tree.compute_element_values(element, ('', 0)) == expected
+
+
+def test_value_index_groups_values_by_attribute():
+    first = Value(attribute_id=1)
+    second = Value(attribute_id=2)
+    third = Value(attribute_id=1)
+
+    values = ValueIndex([first, second, third])
+
+    assert list(values) == [first, second, third]
+    assert values.for_attribute(1) == [first, third]
+    assert values.for_attribute(2) == [second]
+    assert values.for_attribute(3) == ()
+
+
+def test_answer_tree_reuses_prefetched_element_conditions(mocker):
+    condition = mocker.Mock(id=7)
+    element = mocker.Mock()
+    element.conditions.all.return_value = [condition]
+    catalog = mocker.Mock(descendants=[element])
+
+    answer_tree = AnswerTree(catalog, [])
+
+    assert answer_tree.conditions == {7: condition}
+    catalog.conditions.in_bulk.assert_not_called()
 
 
 def test_value_index_computes_same_sets_as_value_queryset(db):

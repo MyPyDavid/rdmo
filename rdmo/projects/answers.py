@@ -5,6 +5,25 @@ from rdmo.core.utils import markdown2html
 from .models.value import Value
 
 
+class ValueIndex:
+    """Materialize values once and provide cheap attribute lookups."""
+
+    def __init__(self, values):
+        self.values = list(values)
+        self.values_by_attribute = defaultdict(list)
+        for value in self.values:
+            self.values_by_attribute[value.attribute_id].append(value)
+
+    def __iter__(self):
+        return iter(self.values)
+
+    def __len__(self):
+        return len(self.values)
+
+    def for_attribute(self, attribute_id):
+        return self.values_by_attribute.get(attribute_id, ())
+
+
 class AnswerTree:
 
     def __init__(self, catalog, values, verbose=None):
@@ -13,7 +32,7 @@ class AnswerTree:
         # Previously compute_sets issued a separate DISTINCT query and every question
         # scanned every project value, making answer-tree computation O(elements *
         # values) for large projects.
-        self.values = list(values)
+        self.values = ValueIndex(values)
         self.verbose = tuple(verbose or ())
 
         self.sets = defaultdict(set)
@@ -24,7 +43,19 @@ class AnswerTree:
             # element.attribute`` behaviour for incomplete/imported data.
             self.sets[value.attribute_id].add((value.set_prefix, value.set_index))
             self.values_by_element_set[(value.attribute_id, value.set_prefix, value.set_index)].append(value)
-        self.conditions = catalog.conditions.in_bulk()
+        # ``prefetch_elements`` already loaded conditions on every element.
+        # Reuse those objects instead of issuing the catalog-wide annotated
+        # condition query, which becomes expensive for large catalogs.
+        descendants = getattr(catalog, 'descendants', None)
+        if isinstance(descendants, list):
+            self.conditions = {
+                condition.id: condition
+                for element in descendants
+                if hasattr(element, 'conditions')
+                for condition in element.conditions.all()
+            }
+        else:
+            self.conditions = catalog.conditions.in_bulk()
 
         # buffer for the resolved conditions: self.resolved_conditions[element][parent_set]
         self.resolved_conditions = defaultdict(lambda: defaultdict(dict))
@@ -214,7 +245,14 @@ class AnswerTree:
         else:
             return {
                 'collection_index': value.collection_index,
-                'is_empty': value.is_empty
+                # Keep this path on scalar database fields. Accessing ``option``
+                # would otherwise fetch one related object per option value.
+                'is_empty': all((
+                    value.text == '',
+                    not value.option_id,
+                    not value.file,
+                    value.external_id == ''
+                ))
             }
 
     def resolve_conditions(self, element, parent_set):

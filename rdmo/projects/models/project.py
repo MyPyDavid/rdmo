@@ -147,13 +147,20 @@ class Project(MPTTModel, Model):
             return self.user.filter(memberships__role=role)
 
     def get_answer_tree(self, snapshot=None, verbose=None):
+        values = self.values.filter(snapshot=snapshot).order_by(
+            'attribute_id', 'set_prefix', 'set_index', 'collection_index'
+        )
+        if verbose and 'value' in verbose:
+            values = values.select_related('attribute', 'option')
+        else:
+            values = values.only(
+                'id', 'project_id', 'snapshot_id', 'attribute_id', 'set_prefix', 'set_index',
+                'set_collection', 'collection_index', 'text', 'option_id', 'file', 'external_id'
+            )
+
         return AnswerTree(
             self.catalog,
-            # Avoid the related-model joins from Value.Meta.ordering, while retaining
-            # deterministic collection ordering in the answer-tree response.
-            self.values.filter(snapshot=snapshot).select_related('attribute', 'option').order_by(
-                'attribute_id', 'set_prefix', 'set_index', 'collection_index'
-            ),
+            values,
             verbose=verbose
         ).compute()
 
