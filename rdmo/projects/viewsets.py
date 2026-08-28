@@ -2,7 +2,6 @@ from collections import defaultdict
 
 from django.conf import settings
 from django.contrib.sites.shortcuts import get_current_site
-from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.db.models import OuterRef, Prefetch, Q, Subquery
 from django.db.models.functions import Coalesce, Greatest
@@ -94,6 +93,17 @@ from .utils import (
     send_invite_email,
 )
 
+CONDITION_VALUE_FIELDS = (
+    'id', 'attribute_id', 'set_prefix', 'set_index', 'set_collection', 'text', 'option_id'
+)
+
+
+def index_values_by_attribute(values):
+    values_by_attribute = defaultdict(list)
+    for value in values:
+        values_by_attribute[value.attribute_id].append(value)
+    return values_by_attribute
+
 
 class ProjectPagination(PageNumberPagination):
     page_size = settings.PROJECT_TABLE_PAGE_SIZE
@@ -130,6 +140,11 @@ class ProjectViewSet(ModelViewSet):
     filter_for_user = False  # flag for get_queryset to return only projects like for a regular user
 
     def get_queryset(self):
+        if self.action == 'navigation':
+            return Project.objects.filter_user(self.request.user, self.filter_for_user).distinct().select_related(
+                'catalog', 'visibility'
+            )
+
         queryset = Project.objects.filter_user(self.request.user, self.filter_for_user).distinct().prefetch_related(
             'snapshots',
             'views',
@@ -188,8 +203,11 @@ class ProjectViewSet(ModelViewSet):
             section = None
         else:
             try:
-                section = project.catalog.sections.get(pk=section_id)
-            except ObjectDoesNotExist as e:
+                section = next(
+                    element for element in project.catalog.elements
+                    if element._meta.model_name == 'section' and element.pk == int(section_id)
+                )
+            except (StopIteration, ValueError) as e:
                 raise NotFound() from e
 
         # compute navigation from the answer tree
@@ -203,7 +221,9 @@ class ProjectViewSet(ModelViewSet):
         set_prefix = request.GET.get('set_prefix')
         set_index = request.GET.get('set_index')
 
-        values = self.get_object().values.filter(snapshot_id=snapshot_id).select_related('attribute', 'option')
+        values = index_values_by_attribute(
+            self.get_object().values.filter(snapshot_id=snapshot_id).order_by().only(*CONDITION_VALUE_FIELDS)
+        )
 
         page_id = request.GET.get('page')
         if page_id:
@@ -310,17 +330,24 @@ class ProjectViewSet(ModelViewSet):
         conditions = Condition.objects.select_related('source', 'target_option').in_bulk(condition_ids)
 
         # get all values of the project
-        values = project.values.filter(snapshot=None).select_related('attribute', 'option')
+        values = index_values_by_attribute(
+            project.values.filter(snapshot=None).order_by().only(*CONDITION_VALUE_FIELDS)
+        )
 
         # second pass: resolve conditions
+        resolved = {}
         for params in validated_data:
             set_prefix = params['set_prefix']
             set_index = params['set_index']
             element_type = params['element_type']
             element_id = params['element_id']
 
-            element_conditions = [conditions[condition_id] for condition_id in elements[element_type][element_id]]
-            params['result'] = check_conditions(element_conditions, values, set_prefix, set_index)
+            element_condition_ids = elements[element_type][element_id]
+            cache_key = (tuple(sorted(element_condition_ids)), set_prefix, set_index)
+            if cache_key not in resolved:
+                element_conditions = [conditions[condition_id] for condition_id in element_condition_ids]
+                resolved[cache_key] = check_conditions(element_conditions, values, set_prefix, set_index)
+            params['result'] = resolved[cache_key]
 
         return Response(validated_data)
 
