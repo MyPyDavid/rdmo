@@ -30,6 +30,16 @@ def test_check_conditions_preserves_set_prefix_fallback(db):
 
 
 @pytest.mark.parametrize('set_index', set_indexes)
+def test_check_conditions_preserves_set_context(db, set_index):
+    condition = Condition.objects.get(uri='http://example.com/terms/conditions/text_contains_test')
+    values = Project.objects.get(id=project_id).values.filter(snapshot=None)
+
+    assert check_conditions(
+        [condition], compute_attribute_values_map(values), set_prefix='', set_index=set_index
+    ) is condition.resolve(values, set_prefix='', set_index=set_index)
+
+
+@pytest.mark.parametrize('set_index', set_indexes)
 def test_set_collection(db, set_index):
     # test the special case, when a condition of a question in a set is checked
     # and the value for the conditions source was not entered as part of as set
@@ -38,7 +48,6 @@ def test_set_collection(db, set_index):
 
     result = condition.resolve(values, set_index=set_index)
     assert result is True
-    assert check_conditions([condition], compute_attribute_values_map(values), set_index=set_index) is result
 
 
 @pytest.mark.parametrize('set_index', set_indexes)
@@ -52,7 +61,6 @@ def test_set_collection_error_none(db, set_index):
     values = Project.objects.get(id=project_id).values.filter(snapshot=None)
     result = condition.resolve(values, set_index=set_index)
     assert result is (True if set_index == 0 else False)
-    assert check_conditions([condition], compute_attribute_values_map(values), set_index=set_index) is result
 
 
 @pytest.mark.parametrize('set_index', set_indexes)
@@ -66,4 +74,3 @@ def test_set_collection_error_true(db, set_index):
     values = Project.objects.get(id=project_id).values.filter(snapshot=None)
     result = condition.resolve(values, set_index=set_index)
     assert result is (True if set_index == 0 else False)
-    assert check_conditions([condition], compute_attribute_values_map(values), set_index=set_index) is result

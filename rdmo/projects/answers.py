@@ -15,11 +15,17 @@ class AnswerTree:
         self.condition_results = {}
         self.verbose = tuple(verbose or ())
 
+        # index values once because answer-tree traversal repeatedly looks them up by attribute and set.
         self.sets = compute_sets(
             (value.attribute_id, value.set_prefix, value.set_index)
             for value in self.values
         )
-        self.conditions = catalog.conditions.in_bulk()
+        self.values_set_map = defaultdict(list)
+        for value in self.values:
+            self.values_set_map[
+                (value.attribute_id, value.set_prefix, value.set_index)
+            ].append(value)
+        self.conditions = self.catalog.conditions.in_bulk()
 
         # buffer for the resolved conditions: self.resolved_conditions[element][parent_set]
         self.resolved_conditions = defaultdict(lambda: defaultdict(dict))
@@ -189,11 +195,7 @@ class AnswerTree:
         set_prefix, set_index = parent_set
 
         # filter the values for this element and set
-        element_values = list(filter(lambda v: all((
-            v.attribute == element.attribute,
-            v.set_prefix == set_prefix,
-            v.set_index == set_index,
-        )), self.values))
+        element_values = self.values_set_map.get((element.attribute_id, set_prefix, set_index), ())
 
         if element_values:
             # if there are values, return them
