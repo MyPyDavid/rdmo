@@ -147,9 +147,20 @@ class Project(MPTTModel, Model):
             return self.user.filter(memberships__role=role)
 
     def get_answer_tree(self, snapshot=None, verbose=None):
+        verbose = tuple(verbose or ())
+        values = self.values.filter(snapshot=snapshot)
+        if 'value' in verbose:
+            values = values.select_related('attribute', 'option')
+        else:
+            # Relation ids and the file must not be deferred because Value initialization hooks access them.
+            values = values.only(
+                'id', 'project_id', 'snapshot_id', 'attribute_id', 'set_prefix', 'set_index', 'set_collection',
+                'collection_index', 'text', 'option_id', 'file', 'external_id',
+            )
+
         return AnswerTree(
             self.catalog,
-            self.values.filter(snapshot=snapshot).select_related('attribute', 'option'),
+            values,
             verbose=verbose
         ).compute()
 

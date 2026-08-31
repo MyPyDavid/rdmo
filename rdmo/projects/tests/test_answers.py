@@ -2,6 +2,15 @@ import pytest
 
 from rdmo.projects.answers import AnswerTree
 
+from ..models import Project
+
+
+def test_conditions_fallback(db):
+    project = Project.objects.get(id=1)
+    answer_tree = AnswerTree(project.catalog, project.values.filter(snapshot=None))
+
+    assert set(answer_tree.conditions) == set(project.catalog.conditions.values_list('id', flat=True))
+
 
 @pytest.mark.parametrize('parent_set, set_level', [
     (None, 0),

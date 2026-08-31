@@ -9,11 +9,30 @@ class AnswerTree:
 
     def __init__(self, catalog, values, verbose=None):
         self.catalog = catalog
-        self.values = values
+        self.values = tuple(values)
         self.verbose = tuple(verbose or ())
 
-        self.sets = values.compute_sets()
-        self.conditions = catalog.conditions.in_bulk()
+        self.values_by_attribute = defaultdict(list)
+        self.values_by_scope = defaultdict(list)
+        self.sets = defaultdict(set)
+        for value in self.values:
+            self.values_by_attribute[value.attribute_id].append(value)
+            self.values_by_scope[(value.attribute_id, value.set_prefix, value.set_index)].append(value)
+            self.sets[value.attribute_id].add((value.set_prefix, value.set_index))
+
+        # Reuse conditions loaded by Catalog.prefetch_elements, but retain the fallback for other callers.
+        self.conditions = {}
+        for element in self.catalog.descendants:
+            if element._meta.model_name not in ('page', 'questionset', 'question'):
+                continue
+
+            prefetched_conditions = getattr(element, '_prefetched_objects_cache', {}).get('conditions')
+            if prefetched_conditions is None:
+                self.conditions = self.catalog.conditions.in_bulk()
+                break
+
+            for condition in prefetched_conditions:
+                self.conditions[condition.pk] = condition
 
         # buffer for the resolved conditions: self.resolved_conditions[element][parent_set]
         self.resolved_conditions = defaultdict(lambda: defaultdict(dict))
@@ -183,11 +202,7 @@ class AnswerTree:
         set_prefix, set_index = parent_set
 
         # filter the values for this element and set
-        element_values = list(filter(lambda v: all((
-            v.attribute == element.attribute,
-            v.set_prefix == set_prefix,
-            v.set_index == set_index,
-        )), self.values))
+        element_values = self.values_by_scope.get((element.attribute_id, set_prefix, set_index), ())
 
         if element_values:
             # if there are values, return them
@@ -207,7 +222,12 @@ class AnswerTree:
         else:
             return {
                 'collection_index': value.collection_index,
-                'is_empty': value.is_empty
+                'is_empty': all((
+                    value.text == '',
+                    not value.option_id,
+                    not value.file,
+                    value.external_id == '',
+                ))
             }
 
     def resolve_conditions(self, element, parent_set):
@@ -216,12 +236,12 @@ class AnswerTree:
             if parent_set:
                 set_prefix, set_index = parent_set
                 self.resolved_conditions[element][parent_set] = any(
-                    self.conditions[condition.id].resolve(self.values, set_prefix, set_index)
+                    self.conditions[condition.id].resolve(self.values_by_attribute, set_prefix, set_index)
                     for condition in element.conditions.all()
                 )
             else:
                 self.resolved_conditions[element][parent_set] = any(
-                    self.conditions[condition.id].resolve(self.values)
+                    self.conditions[condition.id].resolve(self.values_by_attribute)
                     for condition in element.conditions.all()
                 )
 

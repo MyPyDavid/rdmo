@@ -8,13 +8,13 @@ max_queries = [
     # action, max_queries, url_kwargs, url_params
     ('project_answers', 38, {'pk': 1}, {}),
     ('project_answers_export', 31, {'pk': 1, 'format': 'html'}, {}),
-    ('navigation', 40, {'pk': 1}, {}),
-    ('navigation', 40, {'pk': 1, 'section_id': 1}, {}),
-    ('answers', 43, {'pk': 1}, {}),
-    ('page_detail', 46, {'parent_lookup_project': 1, 'pk': 1}, {}),
-    ('page_detail', 50, {'parent_lookup_project': 1, 'pk': 42}, {}),
-    ('page_detail', 62, {'parent_lookup_project': 1, 'pk': 87}, {}),
-    ('progress', 44, {'pk': 1}, {}),
+    ('navigation', 38, {'pk': 1}, {}),
+    ('navigation', 38, {'pk': 1, 'section_id': 1}, {}),
+    ('answers', 41, {'pk': 1}, {}),
+    ('page_detail', 44, {'parent_lookup_project': 1, 'pk': 1}, {}),
+    ('page_detail', 48, {'parent_lookup_project': 1, 'pk': 42}, {}),
+    ('page_detail', 60, {'parent_lookup_project': 1, 'pk': 87}, {}),
+    ('progress', 42, {'pk': 1}, {}),
 ]
 
 
