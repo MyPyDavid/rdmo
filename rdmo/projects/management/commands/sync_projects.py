@@ -16,6 +16,12 @@ class Command(BaseCommand):
         parser.add_argument('--show', action='store_true', help='Display tasks and views per project.')
 
     def handle(self, *args, **options):
+        # Reject invalid settings before either model can be partially reconciled.
+        if options['tasks'] and not settings.PROJECT_TASKS_SYNC:
+            raise CommandError('PROJECT_TASKS_SYNC is disabled in settings.')
+        if options['views'] and not settings.PROJECT_VIEWS_SYNC:
+            raise CommandError('PROJECT_VIEWS_SYNC is disabled in settings.')
+
         show = options['show']
         if not options['tasks'] and not options['views']:
             if show:
@@ -24,15 +30,11 @@ class Command(BaseCommand):
                 raise CommandError('You must specify at least one of --tasks, --views or --show')
 
         if options['tasks']:
-            if not settings.PROJECT_TASKS_SYNC:
-                raise CommandError('PROJECT_TASKS_SYNC is disabled in settings.')
             self.sync_all_tasks_or_views_to_projects(Task)
             if show and not options['views']:
                 self.show_project_tasks_and_views()
 
         if options['views']:
-            if not settings.PROJECT_VIEWS_SYNC:
-                raise CommandError('PROJECT_VIEWS_SYNC is disabled in settings.')
             self.sync_all_tasks_or_views_to_projects(View)
             if show and not options['tasks']:
                 self.show_project_tasks_and_views()
@@ -41,11 +43,11 @@ class Command(BaseCommand):
             self.show_project_tasks_and_views()
 
     def sync_all_tasks_or_views_to_projects(self, model):
-        queryset = model.objects.filter(available=True)
+        queryset = model.objects.all()
         model_name = model._meta.verbose_name_plural
         qs_count = queryset.count()
 
-        self.stdout.write(self.style.SUCCESS(f'Starting sync for {qs_count} available {model_name}...'))
+        self.stdout.write(self.style.SUCCESS(f'Starting sync for {qs_count} {model_name}...'))
         for instance in queryset:
             self.stdout.write(f'- Syncing: {instance}')
             sync_task_or_view_to_projects(instance)
