@@ -205,9 +205,17 @@ class ProjectSerializer(serializers.ModelSerializer):
 
     def validate_views(self, value):
         """Block updates to views if syncing is enabled."""
-        if settings.PROJECT_VIEWS_SYNC and value:
+        if settings.PROJECT_VIEWS_SYNC and 'views' in self.initial_data:
             raise serializers.ValidationError(_('Editing views is disabled.'))
         return value
+
+    def to_internal_value(self, data):
+        validated_data = super().to_internal_value(data)
+        # DRF treats an omitted HTML many-to-many field as an empty list.
+        # Omission must not clear a relation managed by synchronization.
+        if settings.PROJECT_VIEWS_SYNC and 'views' not in data:
+            validated_data.pop('views', None)
+        return validated_data
 
     def get_permissions(self, obj) -> dict[str, bool]:
         request = self.context.get('request')

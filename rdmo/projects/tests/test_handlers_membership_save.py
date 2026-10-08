@@ -1,77 +1,32 @@
-from django.contrib.auth.models import User
-from django.contrib.sites.models import Site
-
-from rdmo.projects.models import Membership, Project
-from rdmo.questions.models import Catalog
-from rdmo.tasks.models import Task
-from rdmo.views.models import View
-
-project_id = 1
-catalog_id = 1
-site_id = 1
-task_id = 1
-view_id = 1
+from rdmo.projects.models import Membership
+from rdmo.projects.tests.helpers.sync.setup import suppress_project_sync
 
 
-def test_project_membership_change_for_tasks(db, settings):
-    settings.PROJECT_TASKS_SYNC = True
+def test_project_membership_creation_restores_unavailable_instance(sync_case, settings):
+    with suppress_project_sync():
+        sync_case.instance.available = False
+        sync_case.instance.save()
+        sync_case.user.is_superuser = True
+        sync_case.user.save()
 
-    # create a project with tasks
-    project = Project.objects.create(
-        title='TEST',
-        catalog=Catalog.objects.get(id=catalog_id),
-        site=Site.objects.get(id=site_id)
-    )
-    project.tasks.set(Task.objects.filter(sites=site_id))
-    project_tasks = {t.id for t in project.tasks.all()}
-    assert project_tasks == {t.id for t in Task.objects.filter(sites=site_id)}
+    setattr(settings, f'PROJECT_{sync_case.field.upper()}_SYNC', True)
+    relation = getattr(sync_case.project, sync_case.field)
+    assert sync_case.instance not in relation.all()
 
-    # make one task unavailable
-    task = Task.objects.get(id=task_id)
-    task.available = False
-    task.save()
-
-    # assert that the task was removed
-    project.refresh_from_db()
-    project_tasks = {t.id for t in project.tasks.all()}
-    assert project_tasks == {t.id for t in Task.objects.filter(sites=site_id).exclude(id=task_id)}
-
-    # add an editor
-    Membership.objects.create(project=project, user=User.objects.get(username='editor'), role='guest')
-
-    # assert that the task is back
-    project.refresh_from_db()
-    project_tasks = {t.id for t in project.tasks.all()}
-    assert project_tasks == {t.id for t in Task.objects.filter(sites=site_id)}
+    Membership.objects.create(project=sync_case.project, user=sync_case.user, role='guest')
+    assert sync_case.instance in relation.all()
 
 
-def test_project_membership_change_for_views(db, settings):
-    settings.PROJECT_VIEWS_SYNC = True
+def test_project_membership_role_change_recalculates_owner_groups(sync_case, settings):
+    with suppress_project_sync():
+        sync_case.user.groups.add(sync_case.group)
+        sync_case.instance.groups.add(sync_case.group)
+        membership = Membership.objects.create(project=sync_case.project, user=sync_case.user, role='guest')
 
-    # create a project with views
-    project = Project.objects.create(
-        title='TEST',
-        catalog=Catalog.objects.get(id=catalog_id),
-        site=Site.objects.get(id=site_id)
-    )
-    project.views.set(View.objects.filter(sites=site_id))
-    project_views = {t.id for t in project.views.all()}
-    assert project_views == {t.id for t in View.objects.filter(sites=site_id)}
+    setattr(settings, f'PROJECT_{sync_case.field.upper()}_SYNC', True)
+    relation = getattr(sync_case.project, sync_case.field)
+    assert sync_case.instance not in relation.all()
 
-    # make one view unavailable
-    view = View.objects.get(id=view_id)
-    view.available = False
-    view.save()
-
-    # assert that the view was removed
-    project.refresh_from_db()
-    project_views = {t.id for t in project.views.all()}
-    assert project_views == {t.id for t in View.objects.filter(sites=site_id).exclude(id=view_id)}
-
-    # add an editor
-    Membership.objects.create(project=project, user=User.objects.get(username='editor'), role='guest')
-
-    # assert that the view is back
-    project.refresh_from_db()
-    project_views = {t.id for t in project.views.all()}
-    assert project_views == {t.id for t in View.objects.filter(sites=site_id)}
+    membership.role = 'owner'
+    membership.save(update_fields=['role'])
+    assert sync_case.instance in relation.all()
