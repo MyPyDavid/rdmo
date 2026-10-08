@@ -82,10 +82,9 @@ def filter_tasks_or_views_for_project(model, project):
                      .filter(Q(groups=None) | Q(groups__in=project.groups))
     )
 
-    # check if there is a member of the without tasks.view_task/views.view_view
-    members_without_permission = Membership.objects.filter(
-        project=project
-    ).exclude(
+    # Unavailable instances require at least one member, with every member privileged.
+    memberships = Membership.objects.filter(project=project)
+    members_without_permission = memberships.exclude(
         Q(user__is_superuser=True) |
         Q(user__user_permissions__content_type__app_label=model._meta.app_label,
           user__user_permissions__codename=f'view_{model._meta.model_name}') |
@@ -95,7 +94,7 @@ def filter_tasks_or_views_for_project(model, project):
         Q(user__role__reviewer=project.site_id)
     ).distinct()
 
-    if members_without_permission.exists():
+    if not memberships.exists() or members_without_permission.exists():
         queryset = queryset.filter(available=True)
 
     if settings.MULTISITE:
