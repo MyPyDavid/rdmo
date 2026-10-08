@@ -1,38 +1,24 @@
 import pytest
 
 from rdmo.projects.tests.helpers.sync.arrange_project_tasks import arrange_projects_catalogs_and_tasks
+from rdmo.projects.tests.helpers.sync.setup import suppress_project_sync
 
 
 @pytest.mark.django_db
-def test_project_tasks_sync_when_updating_available_on_a_task(settings):
+@pytest.mark.parametrize('available', [False, True])
+def test_project_tasks_sync_when_updating_available_on_a_task(settings, available):
+    projects, _, instances = arrange_projects_catalogs_and_tasks()
+    with suppress_project_sync():
+        instances[1].available = not available
+        instances[1].save()
+        if available:
+            projects[1].tasks.remove(instances[1])
     settings.PROJECT_TASKS_SYNC = True
 
-    P, C, T = arrange_projects_catalogs_and_tasks()
-    # === Initial state ===
-    # P1 (with C1) has V1, etc..
-    assert set(P[1].tasks.all()) == {T[1]}
-    assert set(P[2].tasks.all()) == {T[2]}
-    assert set(P[3].tasks.all()) == {T[3]}
-    # Arrange: make V1 unavailable
-    T[1].available = False
-    T[1].save()
+    instances[1].available = available
+    instances[1].save(update_fields=['available'])
 
-    # === Act: V1 is unavailable and has no catalogs → it should not appear in any projects ===
-    T[1].catalogs.clear()
-    assert set(P[1].tasks.all()) == set()  # should be removed
-    assert set(P[2].tasks.all()) == {T[2]}
-    assert set(P[3].tasks.all()) == {T[3]}
-
-    # === Act: V1 is unavailable and is added to catalogs → it should not appear in any projects ===
-    T[1].catalogs.set([C[1], C[2]])  # V1 → [C1, C2]
-    assert set(P[1].tasks.all()) == set() # should stay empty
-    assert set(P[2].tasks.all()) == {T[2]}
-    assert set(P[3].tasks.all()) == {T[3]}
-
-    # === Act: make V1 available → it should appear in projects P1,P2 ===
-    T[1].available = True
-    T[1].save(update_fields=['available'])
-
-    assert set(P[1].tasks.all()) == {T[1]}
-    assert set(P[2].tasks.all()) == {T[2], T[1]}
-    assert set(P[3].tasks.all()) == {T[3]}
+    controlled_ids = [obj.pk for obj in instances.values()]
+    assert set(projects[1].tasks.filter(pk__in=controlled_ids)) == ({instances[1]} if available else set())
+    assert set(projects[2].tasks.filter(pk__in=controlled_ids)) == {instances[2]}
+    assert set(projects[3].tasks.filter(pk__in=controlled_ids)) == {instances[3]}

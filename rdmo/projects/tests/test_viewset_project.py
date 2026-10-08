@@ -2,8 +2,10 @@ import pytest
 
 from django.contrib.auth.models import Group, User
 from django.contrib.sites.models import Site
+from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
 from django.urls import reverse
 
+from rdmo.projects.tests.helpers.sync.setup import suppress_project_sync
 from rdmo.tasks.models import Task
 from rdmo.views.models import View
 
@@ -664,18 +666,68 @@ def test_update_parent(db, client, username, password, project_id):
         assert Project.objects.get(pk=project_id).parent == project.parent
 
 
-def test_update_project_views_not_allowed(db, client, settings):
-    settings.PROJECT_VIEWS_SYNC = True
-
+@pytest.mark.parametrize('method', ['post', 'put', 'patch'])
+@pytest.mark.parametrize('supplied_views', ['omitted', 'empty', 'nonempty'])
+@pytest.mark.parametrize('sync', [False, True])
+def test_explicit_project_views_respect_sync_setting(db, client, settings, method, supplied_views, sync):
+    with suppress_project_sync():
+        view = View.objects.create(uri_prefix='http://example.com/sync', uri_path='api-view')
+        view.sites.add(Site.objects.get(pk=site_id))
+    settings.PROJECT_VIEWS_SYNC = sync
     client.login(username='owner', password='owner')
-    url = reverse(urlnames['detail'], args=[project_id])
-    data = {
-        'views': [1]
-    }
-    response = client.put(url, data, content_type='application/json')
+    project = Project.objects.get(pk=project_id)
+    original_views = set(project.views.all())
+    project_count = Project.objects.count()
+    data = {'title': 'Sync API project', 'catalog': catalog_id}
+    if supplied_views != 'omitted':
+        data['views'] = [] if supplied_views == 'empty' else [view.pk]
+    url = reverse(urlnames['list']) if method == 'post' else reverse(urlnames['detail'], args=[project_id])
 
-    assert response.status_code == 400
-    assert 'Editing views is disabled' in ' '.join(response.json()['views'])
+    response = getattr(client, method)(url, data, content_type='application/json')
+
+    if sync and supplied_views != 'omitted':
+        assert response.status_code == 400
+        assert 'Editing views is disabled' in ' '.join(response.json()['views'])
+        assert Project.objects.count() == project_count
+        project.refresh_from_db()
+        assert project.title != data['title']
+        assert set(project.views.all()) == original_views
+    else:
+        assert response.status_code == (201 if method == 'post' else 200)
+        result = Project.objects.get(pk=response.json()['id'])
+        if supplied_views == 'empty':
+            assert not result.views.exists()
+        elif supplied_views == 'nonempty':
+            assert set(result.views.all()) == {view}
+        elif method == 'post':
+            assert view in result.views.all()
+        else:
+            assert set(result.views.all()) == original_views
+
+
+@pytest.mark.parametrize('method', ['post', 'put', 'patch'])
+def test_omitted_form_views_do_not_clear_synced_relations(db, client, settings, method):
+    with suppress_project_sync():
+        view = View.objects.create(uri_prefix='http://example.com/sync', uri_path='form-view')
+        view.sites.add(Site.objects.get(pk=site_id))
+        project = Project.objects.get(pk=project_id)
+        project.views.add(view)
+    settings.PROJECT_VIEWS_SYNC = True
+    client.login(username='owner', password='owner')
+    original_views = set(project.views.all())
+    data = {'title': 'Sync form project', 'catalog': catalog_id}
+    url = reverse(urlnames['list']) if method == 'post' else reverse(urlnames['detail'], args=[project_id])
+
+    response = client.generic(
+        method.upper(), url, encode_multipart(BOUNDARY, data), content_type=MULTIPART_CONTENT
+    )
+
+    assert response.status_code == (201 if method == 'post' else 200)
+    result = Project.objects.get(pk=response.json()['id'])
+    if method == 'post':
+        assert view in result.views.all()
+    else:
+        assert set(result.views.all()) == original_views
 
 
 @pytest.mark.parametrize('username,password', users)
